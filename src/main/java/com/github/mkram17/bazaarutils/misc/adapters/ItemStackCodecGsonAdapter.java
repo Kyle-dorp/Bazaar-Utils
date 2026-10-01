@@ -33,6 +33,9 @@ public class ItemStackCodecGsonAdapter implements JsonSerializer<ItemStack>, Jso
         DataResult<ItemStack> result = ItemStack.CODEC.parse(JsonOps.INSTANCE, json);
 
         return result.resultOrPartial(errorMessage -> {
+                    // Config loads during client init, before item components are bound (they bind on world join).
+                    // The saved stack is only a placeholder that gets rebuilt later, so this is expected, not an error.
+                    if (errorMessage.contains("does not have components yet")) return;
                     Util.notifyError("Failed to deserialize ItemStack from JSON: " + errorMessage + " - JSON: " + json.toString(), new Throwable());
                 })
                 .orElse(ItemStack.EMPTY);

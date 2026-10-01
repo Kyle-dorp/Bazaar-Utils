@@ -18,7 +18,7 @@ public class StashHelper {
     @Getter
     private static int ticksBetweenPresses;
     //? if > 1.21.8
-    private static final KeyMapping.Category CATEGORY = KeyMapping.Category.register(Identifier.parse(BazaarUtils.MODID));
+    static final KeyMapping.Category CATEGORY = KeyMapping.Category.register(Identifier.parse(BazaarUtils.MODID));
     private static final KeyMapping keyBinding = new KeyMapping(
        "Pick Up Stash",
        InputConstants.Type.KEYSYM,

@@ -1,6 +1,7 @@
 package com.github.mkram17.bazaarutils.mixin;
 
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.world.inventory.Slot;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
@@ -14,5 +15,8 @@ public interface AccessorAbstractContainerScreen {
 
     @Accessor("topPos")
     int getTopPos();
+
+    @Accessor("hoveredSlot")
+    Slot getHoveredSlot();
 
 }

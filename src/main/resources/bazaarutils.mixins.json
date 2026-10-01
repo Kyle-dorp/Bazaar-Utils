@@ -15,6 +15,7 @@
     "MixinAbstractContainerScreen",
     "MixinSignEditScreen",
     "MixinSimpleContainer",
-    "AccessorSkyBlockBazaarReply"
+    "AccessorSkyBlockBazaarReply",
+    "MixinBazaarFlipConfigScreen"
   ]
 }
