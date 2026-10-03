@@ -34,7 +34,12 @@ public class BazaarUtils implements ClientModInitializer {
     public static boolean updatedMajorVersion = false;
     @Getter
     private static String updateNotes;
-    public static ScheduledExecutorService BUExecutorService = Executors.newSingleThreadScheduledExecutor();
+    public static ScheduledExecutorService BUExecutorService = Executors.newSingleThreadScheduledExecutor(runnable -> {
+        // daemon so an idle executor never keeps the JVM alive after the game closes
+        Thread thread = new Thread(runnable, "BazaarUtils-scheduler");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     public static DataComponentType<String> CUSTOM_SIZE_COMPONENT;
     public static DataComponentType<Boolean> CUSTOM_SHOWPRICECHART_COMPONENT;

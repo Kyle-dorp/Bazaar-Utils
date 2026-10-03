@@ -11,7 +11,7 @@ public class Patch {
 
     public static void main(String[] a) throws Exception {
         Path in = Path.of(a[0]), out = Path.of(a[1]);
-        int patched = 0, taxed = 0, qtyPatched = 0;
+        int patched = 0, taxed = 0, qtyPatched = 0, daemon = 0;
         try (ZipFile zf = new ZipFile(in.toFile());
              ZipOutputStream zo = new ZipOutputStream(Files.newOutputStream(out))) {
             var en = zf.entries();
@@ -22,6 +22,15 @@ public class Patch {
                     ClassNode cn = new ClassNode();
                     new ClassReader(data).accept(cn, 0);
                     for (MethodNode m : cn.methods) {
+                        // make the scheduler threads daemon so the JVM can exit when the game closes
+                        for (AbstractInsnNode n = m.instructions.getFirst(); n != null; n = n.getNext()) {
+                            if (n instanceof MethodInsnNode mi && mi.owner.equals("java/util/concurrent/Executors")
+                                    && mi.name.equals("newScheduledThreadPool") && mi.desc.equals("(I)Ljava/util/concurrent/ScheduledExecutorService;")) {
+                                mi.owner = "com/github/mkram17/bazaarutils/features/BaseProfit";
+                                mi.name = "daemonScheduler";
+                                daemon++;
+                            }
+                        }
                         // apply sell tax to the sell price in the profit and total-sell-value calculations
                         for (AbstractInsnNode n = m.instructions.getFirst(); n != null; n = n.getNext()) {
                             if (n instanceof VarInsnNode v && v.getOpcode() == Opcodes.DLOAD && v.var == 16) {
@@ -72,6 +81,6 @@ public class Patch {
                 zo.closeEntry();
             }
         }
-        System.out.println("patched sites: " + patched + ", taxed: " + taxed + ", qty: " + qtyPatched);
+        System.out.println("patched sites: " + patched + ", taxed: " + taxed + ", qty: " + qtyPatched + ", daemon: " + daemon);
     }
 }

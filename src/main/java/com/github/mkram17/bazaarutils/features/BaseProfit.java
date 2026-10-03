@@ -57,6 +57,18 @@ public class BaseProfit {
         return sellPrice * (1.0 - taxPercent / 100.0);
     }
 
+    /**
+     * Called by the patched BazaarFlip in place of Executors.newScheduledThreadPool(n). Its stock scheduler threads are
+     * not daemon threads, so they keep the JVM alive after the game closes and the launcher reports a crash.
+     */
+    public static java.util.concurrent.ScheduledExecutorService daemonScheduler(int threads) {
+        return java.util.concurrent.Executors.newScheduledThreadPool(threads, runnable -> {
+            Thread thread = new Thread(runnable, "BazaarFlip-scheduler");
+            thread.setDaemon(true);
+            return thread;
+        });
+    }
+
     private static final double FULL_INVENTORY = 71680.0;
     private static java.lang.reflect.Field maxSpendField;
 
