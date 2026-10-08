@@ -69,6 +69,24 @@ public class BaseProfit {
         });
     }
 
+    private static double week(com.google.gson.JsonObject quickStatus, String field) {
+        try {
+            return quickStatus.get(field).getAsDouble();
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    /**
+     * Called by the patched BazaarFlip in place of "total profit". How many items you would fill in an hour as the top
+     * offer: the 7-day moving volume divided by 168 hours, taking the slower of the buy and sell side because both have to
+     * fill for a flip to complete. Multiplied by profit per item (already after tax) that is profit per hour.
+     */
+    public static double profitPerHour(com.google.gson.JsonObject quickStatus, double profitPerItem) {
+        double perHour = Math.min(week(quickStatus, "buyMovingWeek"), week(quickStatus, "sellMovingWeek")) / 168.0;
+        return profitPerItem * perHour;
+    }
+
     private static final double FULL_INVENTORY = 71680.0;
     private static java.lang.reflect.Field maxSpendField;
 

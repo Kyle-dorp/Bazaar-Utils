@@ -11,7 +11,7 @@ public class Patch {
 
     public static void main(String[] a) throws Exception {
         Path in = Path.of(a[0]), out = Path.of(a[1]);
-        int patched = 0, taxed = 0, qtyPatched = 0, daemon = 0;
+        int patched = 0, taxed = 0, qtyPatched = 0, daemon = 0, perHour = 0, swapped = 0, labels = 0;
         try (ZipFile zf = new ZipFile(in.toFile());
              ZipOutputStream zo = new ZipOutputStream(Files.newOutputStream(out))) {
             var en = zf.entries();
@@ -59,6 +59,32 @@ public class Patch {
                                 n = next.getPrevious();
                             }
                         }
+                        // totalProfit (local 31) becomes profit per hour: profit/item * min(7d buy, 7d sell) / 168
+                        for (AbstractInsnNode n = m.instructions.getFirst(); n != null; n = n.getNext()) {
+                            if (n instanceof VarInsnNode v && v.getOpcode() == Opcodes.DSTORE && v.var == 31
+                                    && v.getPrevious().getOpcode() == Opcodes.DSUB) {
+                                InsnList repl = new InsnList();
+                                repl.add(new VarInsnNode(Opcodes.ALOAD, 18)); // quick_status JsonObject
+                                repl.add(new VarInsnNode(Opcodes.DLOAD, 23)); // profit per item (after tax)
+                                repl.add(new MethodInsnNode(Opcodes.INVOKESTATIC,
+                                        "com/github/mkram17/bazaarutils/features/BaseProfit", "profitPerHour",
+                                        "(Lcom/google/gson/JsonObject;D)D", false));
+                                repl.add(new VarInsnNode(Opcodes.DSTORE, 31));
+                                m.instructions.insert(v, repl);
+                                perHour++;
+                                break;
+                            }
+                        }
+                        // sort orders: the first list ranks by profit/hour, the second by margin %
+                        if (m.name.startsWith("lambda$perform")) {
+                            for (AbstractInsnNode n = m.instructions.getFirst(); n != null; n = n.getNext()) {
+                                if (n instanceof FieldInsnNode f && f.getOpcode() == Opcodes.GETFIELD
+                                        && f.owner.equals("uwu/ramona/bazaar/BazaarFlipMod$BazaarItem")) {
+                                    if (f.name.equals("profitMargin")) { f.name = "totalProfit"; swapped++; }
+                                    else if (f.name.equals("totalProfit")) { f.name = "profitMargin"; swapped++; }
+                                }
+                            }
+                        }
                         for (AbstractInsnNode n = m.instructions.getFirst(); n != null; n = n.getNext()) {
                             if (n instanceof FieldInsnNode f && f.getOpcode() == Opcodes.GETSTATIC
                                     && f.name.equals("backgroundAlertThreshold")) {
@@ -76,11 +102,29 @@ public class Patch {
                     cn.accept(cw);
                     data = cw.toByteArray();
                 }
+                if (e.getName().equals("uwu/ramona/bazaar/hud/HudRenderer.class")) {
+                    ClassNode cn = new ClassNode();
+                    new ClassReader(data).accept(cn, 0);
+                    for (MethodNode m : cn.methods) {
+                        for (AbstractInsnNode n = m.instructions.getFirst(); n != null; n = n.getNext()) {
+                            if (n instanceof LdcInsnNode l && l.cst instanceof String s) {
+                                String t = s;
+                                if (t.contains("Bazaar Flips (Profit %)")) t = t.replace("(Profit %)", "(Profit/hr)");
+                                else if (t.contains("Bazaar Flips (Total Profit)")) t = t.replace("(Total Profit)", "(Profit %)");
+                                else if (t.contains("Total Profit: ")) t = t.replace("Total Profit: ", "Profit/hr: ");
+                                if (!t.equals(s)) { l.cst = t; labels++; }
+                            }
+                        }
+                    }
+                    ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+                    cn.accept(cw);
+                    data = cw.toByteArray();
+                }
                 zo.putNextEntry(new ZipEntry(e.getName()));
                 zo.write(data);
                 zo.closeEntry();
             }
         }
-        System.out.println("patched sites: " + patched + ", taxed: " + taxed + ", qty: " + qtyPatched + ", daemon: " + daemon);
+        System.out.println("patched sites: " + patched + ", taxed: " + taxed + ", qty: " + qtyPatched + ", daemon: " + daemon + ", perHour: " + perHour + ", swapped: " + swapped + ", labels: " + labels);
     }
 }
