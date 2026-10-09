@@ -126,12 +126,12 @@ public class FlipSettingsScreen extends Screen {
         listOn = getBool("enableMonitoring");
 
         int left = x0(), right = left + COL_W + GAP;
-        int top = 44;
+        int top = 62;
 
         // left column: what the list shows
-        label(left, top - 22, "WHAT IT SHOWS");
+        label(left, top - 32, "WHAT IT SHOWS");
         String[][] leftRows = {
-                {"Min profit per item (coins)"}, {"Min items per hour"}, {"Max price vs 7-day average (%)"},
+                {"Min profit per item (coins)"}, {"Min items per hour"}, {"Max vs 7-day average (%)"},
                 {"Max spend (coins)"}, {"Min margin (%)"}, {"Sell tax (%)"}};
         for (int i = 0; i < leftRows.length; i++) label(left, top + i * ROW_H - 10, leftRows[i][0]);
         numberDouble(left, top + 0 * ROW_H, "Min profit", BaseProfit.getCoins(), BaseProfit::setCoins);
@@ -142,7 +142,7 @@ public class FlipSettingsScreen extends Screen {
         numberDouble(left, top + 5 * ROW_H, "Tax", BaseProfit.getTaxPercent(), BaseProfit::setTaxPercent);
 
         // right column: how it looks
-        label(right, top - 22, "HOW IT LOOKS");
+        label(right, top - 32, "HOW IT LOOKS");
         listButton = Button.builder(Component.literal("Flip list: " + (listOn ? "ON" : "OFF")), b -> {
             listOn = !listOn;
             b.setMessage(Component.literal("Flip list: " + (listOn ? "ON" : "OFF")));
@@ -153,15 +153,28 @@ public class FlipSettingsScreen extends Screen {
             b.setMessage(Component.literal("Size: " + SCALE[scaleIndex]));
         }).bounds(right, top - 10 + 1 * ROW_H, COL_W, 18).build();
         addRenderableWidget(scaleButton);
-        String[] rightRows = {"Rows in profit/hr list", "Rows in margin % list", "Position X", "Position Y"};
+        String[] rightRows = {"Rows visible at once", "Total rows (scroll)", "Position X", "Position Y"};
         for (int i = 0; i < rightRows.length; i++) label(right, top + (i + 2) * ROW_H - 10, rightRows[i]);
-        numberInt(right, top + 2 * ROW_H, "Rows A", "bazaarGuiTopItemsByPercentageCount", 1);
-        numberInt(right, top + 3 * ROW_H, "Rows B", "bazaarGuiTopItemsByMoneyCount", 1);
+        EditBox visibleBox = box(right, top + 2 * ROW_H, "Rows visible", String.valueOf(BaseProfit.getVisibleRows()));
+        savers.add(() -> {
+            try {
+                BaseProfit.setVisibleRows((int) Double.parseDouble(visibleBox.getValue().trim()));
+            } catch (NumberFormatException ignored) { }
+        });
+        // the flip list is one column now: all rows live in the first list, the second stays empty
+        EditBox totalBox = box(right, top + 3 * ROW_H, "Total rows", String.valueOf(
+                Math.max(1, getInt("bazaarGuiTopItemsByPercentageCount") + getInt("bazaarGuiTopItemsByMoneyCount"))));
+        savers.add(() -> {
+            try {
+                setInt("bazaarGuiTopItemsByPercentageCount", Math.max(1, (int) Double.parseDouble(totalBox.getValue().trim())));
+                setInt("bazaarGuiTopItemsByMoneyCount", 0);
+            } catch (NumberFormatException ignored) { }
+        });
         numberInt(right, top + 4 * ROW_H, "X", "guiX", Integer.MIN_VALUE);
         numberInt(right, top + 5 * ROW_H, "Y", "guiY", Integer.MIN_VALUE);
 
         addRenderableWidget(Button.builder(Component.literal("Save and close"), b -> onClose())
-                .bounds(width / 2 - 70, top + 6 * ROW_H + 4, 140, 20).build());
+                .bounds(width / 2 - 70, top + 6 * ROW_H + 2, 140, 20).build());
     }
 
     @Override
@@ -181,7 +194,7 @@ public class FlipSettingsScreen extends Screen {
         super.extractRenderState(g, mouseX, mouseY, delta);
         for (int i = 0; i < labels.size(); i++) {
             boolean header = labels.get(i)[0].equals("WHAT IT SHOWS") || labels.get(i)[0].equals("HOW IT LOOKS");
-            g.text(font, labels.get(i)[0], labelPos.get(i)[0], labelPos.get(i)[1] + (header ? 14 : 0),
+            g.text(font, labels.get(i)[0], labelPos.get(i)[0], labelPos.get(i)[1],
                     header ? 0xFF55FFFF : 0xFFBBBBBB, true);
         }
     }

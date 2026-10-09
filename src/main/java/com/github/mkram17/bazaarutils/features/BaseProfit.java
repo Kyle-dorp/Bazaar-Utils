@@ -38,8 +38,31 @@ public class BaseProfit {
             o.addProperty("sellTaxPercent", taxPercent);
             o.addProperty("minItemsPerHour", minItemsPerHour);
             o.addProperty("maxVsWeekAveragePercent", avgTolerance);
+            o.addProperty("visibleRows", visibleRows);
             Files.writeString(FILE, new Gson().toJson(o));
         } catch (Exception ignored) { }
+    }
+
+    private static volatile int visibleRows = loadVisibleRows();
+
+    private static int loadVisibleRows() {
+        try {
+            if (Files.exists(FILE)) {
+                JsonObject o = new Gson().fromJson(Files.readString(FILE), JsonObject.class);
+                if (o.has("visibleRows")) return Math.max(1, o.get("visibleRows").getAsInt());
+            }
+        } catch (Exception ignored) { }
+        return 7;
+    }
+
+    /** How many flips the on-screen list shows at once; the rest are reached by scrolling. */
+    public static int getVisibleRows() {
+        return visibleRows;
+    }
+
+    public static void setVisibleRows(int value) {
+        visibleRows = Math.max(1, value);
+        save();
     }
 
     private static volatile double avgTolerance = loadAvgTolerance();
@@ -236,10 +259,13 @@ public class BaseProfit {
         }
     }
 
-    /** Called by the patched BazaarFlip in place of its fixed min-margin setting. */
+    /**
+     * Called by the patched BazaarFlip in place of its fixed min-margin setting. Both minimums apply: the margin has to
+     * clear the configured % and also be enough to earn the min profit per item at this item's price.
+     */
     public static double minMargin(double buyPrice, double configuredMinMargin) {
         if (coins <= 0 || buyPrice <= 0) return configuredMinMargin;
-        return coins / buyPrice * 100.0;
+        return Math.max(configuredMinMargin, coins / buyPrice * 100.0);
     }
 
     @RunOnInit

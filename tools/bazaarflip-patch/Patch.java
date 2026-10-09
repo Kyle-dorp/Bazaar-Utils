@@ -11,7 +11,7 @@ public class Patch {
 
     public static void main(String[] a) throws Exception {
         Path in = Path.of(a[0]), out = Path.of(a[1]);
-        int patched = 0, taxed = 0, qtyPatched = 0, daemon = 0, perHour = 0, swapped = 0, labels = 0, rateGate = 0, page2 = 0, avgGate = 0, screens = 0;
+        int patched = 0, taxed = 0, qtyPatched = 0, daemon = 0, perHour = 0, swapped = 0, labels = 0, rateGate = 0, hud = 0, page2 = 0, avgGate = 0, screens = 0;
         try (ZipFile zf = new ZipFile(in.toFile());
              ZipOutputStream zo = new ZipOutputStream(Files.newOutputStream(out))) {
             var en = zf.entries();
@@ -178,6 +178,21 @@ public class Patch {
                     ClassNode cn = new ClassNode();
                     new ClassReader(data).accept(cn, 0);
                     for (MethodNode m : cn.methods) {
+                        if (m.name.equals("renderOverlay")) {
+                            // draw the one-column, scrollable list from Bazaar Utils instead of the stock two-column one
+                            m.instructions.clear();
+                            m.tryCatchBlocks.clear();
+                            m.localVariables = null;
+                            m.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                            m.instructions.add(new VarInsnNode(Opcodes.ILOAD, 1));
+                            m.instructions.add(new VarInsnNode(Opcodes.ILOAD, 2));
+                            m.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC,
+                                    "com/github/mkram17/bazaarutils/features/FlipHud", "render",
+                                    "(Lnet/minecraft/client/gui/GuiGraphicsExtractor;II)V", false));
+                            m.instructions.add(new InsnNode(Opcodes.RETURN));
+                            hud++;
+                            continue;
+                        }
                         for (AbstractInsnNode n = m.instructions.getFirst(); n != null; n = n.getNext()) {
                             if (n instanceof LdcInsnNode l && l.cst instanceof String s) {
                                 String t = s;
@@ -197,6 +212,6 @@ public class Patch {
                 zo.closeEntry();
             }
         }
-        System.out.println("patched sites: " + patched + ", taxed: " + taxed + ", qty: " + qtyPatched + ", daemon: " + daemon + ", perHour: " + perHour + ", swapped: " + swapped + ", labels: " + labels + ", page2: " + page2 + ", rateGate: " + rateGate + ", avgGate: " + avgGate + ", screens: " + screens);
+        System.out.println("patched sites: " + patched + ", taxed: " + taxed + ", qty: " + qtyPatched + ", daemon: " + daemon + ", perHour: " + perHour + ", swapped: " + swapped + ", labels: " + labels + ", page2: " + page2 + ", hud: " + hud + ", rateGate: " + rateGate + ", avgGate: " + avgGate + ", screens: " + screens);
     }
 }
