@@ -37,8 +37,108 @@ public class BaseProfit {
             o.addProperty("minProfitPerItem", coins);
             o.addProperty("sellTaxPercent", taxPercent);
             o.addProperty("minItemsPerHour", minItemsPerHour);
+            o.addProperty("maxVsWeekAveragePercent", avgTolerance);
             Files.writeString(FILE, new Gson().toJson(o));
         } catch (Exception ignored) { }
+    }
+
+    private static volatile double avgTolerance = loadAvgTolerance();
+
+    private static double loadAvgTolerance() {
+        try {
+            if (Files.exists(FILE)) {
+                JsonObject o = new Gson().fromJson(Files.readString(FILE), JsonObject.class);
+                if (o.has("maxVsWeekAveragePercent")) return o.get("maxVsWeekAveragePercent").getAsDouble();
+            }
+        } catch (Exception ignored) { }
+        return 20;
+    }
+
+    public static double getAvgTolerance() {
+        return avgTolerance;
+    }
+
+    public static void setAvgTolerance(double value) {
+        avgTolerance = Math.max(0, value);
+        save();
+    }
+
+    public static double getTaxPercent() {
+        return taxPercent;
+    }
+
+    public static void setTaxPercent(double value) {
+        taxPercent = Math.max(0, Math.min(100, value));
+        save();
+    }
+
+    // ---- 7-day average price filter (history from Coflnet) ----
+
+    private record Average(double medianBuy, double medianSell, long fetchedAt, boolean failed) { }
+
+    private static final java.util.Map<String, Average> averages = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Set<String> inFlight = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private static final java.util.concurrent.ExecutorService historyFetcher = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "BazaarFlip-history");
+        t.setDaemon(true);
+        return t;
+    });
+    private static final long AVERAGE_TTL_MS = 20 * 60 * 1000L;
+    private static final long FAILED_RETRY_MS = 2 * 60 * 1000L;
+
+    private static double median(java.util.List<Double> values) {
+        if (values.isEmpty()) return 0;
+        java.util.Collections.sort(values);
+        return values.get(values.size() / 2);
+    }
+
+    private static void fetchAverage(String id) {
+        if (!inFlight.add(id)) return;
+        historyFetcher.submit(() -> {
+            Average result;
+            try {
+                java.net.HttpURLConnection c = (java.net.HttpURLConnection) java.net.URI
+                        .create("https://sky.coflnet.com/api/bazaar/" + id + "/history/week").toURL().openConnection();
+                c.setConnectTimeout(5000);
+                c.setReadTimeout(8000);
+                c.setRequestProperty("User-Agent", "BazaarUtils-FlipFilter");
+                java.util.List<Double> buys = new java.util.ArrayList<>(), sells = new java.util.ArrayList<>();
+                try (java.io.InputStream in = c.getInputStream()) {
+                    com.google.gson.JsonArray arr = com.google.gson.JsonParser.parseString(new String(in.readAllBytes())).getAsJsonArray();
+                    for (com.google.gson.JsonElement e : arr) {
+                        JsonObject o = e.getAsJsonObject();
+                        if (o.has("buy") && o.get("buy").getAsDouble() > 0) buys.add(o.get("buy").getAsDouble());
+                        if (o.has("sell") && o.get("sell").getAsDouble() > 0) sells.add(o.get("sell").getAsDouble());
+                    }
+                }
+                result = buys.size() >= 6 && sells.size() >= 6
+                        ? new Average(median(buys), median(sells), System.currentTimeMillis(), false)
+                        : new Average(0, 0, System.currentTimeMillis(), true);
+            } catch (Exception e) {
+                result = new Average(0, 0, System.currentTimeMillis(), true);
+            }
+            averages.put(id, result);
+            inFlight.remove(id);
+        });
+    }
+
+    /**
+     * Called by the patched BazaarFlip. Rejects flips whose prices are far from the 7-day average, which is what a bought-out
+     * or dumped item looks like: the order book jumps so the spread looks huge, but nothing will actually fill at that price.
+     * buyPrice is what you would pay (top buy order), sellPrice is what you would receive (lowest sell offer).
+     * While the history for an item is still loading it is hidden; if history is unavailable it is let through.
+     */
+    public static boolean passesAverage(String id, double buyPrice, double sellPrice) {
+        if (avgTolerance <= 0) return true;
+        Average a = averages.get(id);
+        long now = System.currentTimeMillis();
+        if (a == null || now - a.fetchedAt() > (a.failed() ? FAILED_RETRY_MS : AVERAGE_TTL_MS)) {
+            fetchAverage(id);
+            if (a == null) return false;
+        }
+        if (a.failed()) return true;
+        double tol = avgTolerance / 100.0;
+        return sellPrice <= a.medianBuy() * (1 + tol) && buyPrice >= a.medianSell() * (1 - tol);
     }
 
     private static volatile double minItemsPerHour = loadMinItems();

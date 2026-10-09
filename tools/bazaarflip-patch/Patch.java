@@ -11,7 +11,7 @@ public class Patch {
 
     public static void main(String[] a) throws Exception {
         Path in = Path.of(a[0]), out = Path.of(a[1]);
-        int patched = 0, taxed = 0, qtyPatched = 0, daemon = 0, perHour = 0, swapped = 0, labels = 0, rateGate = 0;
+        int patched = 0, taxed = 0, qtyPatched = 0, daemon = 0, perHour = 0, swapped = 0, labels = 0, rateGate = 0, avgGate = 0, screens = 0;
         try (ZipFile zf = new ZipFile(in.toFile());
              ZipOutputStream zo = new ZipOutputStream(Files.newOutputStream(out))) {
             var en = zf.entries();
@@ -93,6 +93,37 @@ public class Patch {
                                 break;
                             }
                         }
+                        // reject flips whose prices are far from the 7-day average (bought-out / dumped items)
+                        for (AbstractInsnNode n = m.instructions.getFirst(); n != null; n = n.getNext()) {
+                            if (n instanceof FieldInsnNode f && f.getOpcode() == Opcodes.GETSTATIC
+                                    && f.name.equals("backgroundAlertMaxThreshold")) {
+                                AbstractInsnNode j = f.getNext();
+                                while (j != null && !(j instanceof JumpInsnNode)) j = j.getNext();
+                                JumpInsnNode jump = (JumpInsnNode) j;
+                                InsnList repl = new InsnList();
+                                repl.add(new VarInsnNode(Opcodes.ALOAD, 10)); // product id
+                                repl.add(new VarInsnNode(Opcodes.DLOAD, 14)); // buy price (top buy order)
+                                repl.add(new VarInsnNode(Opcodes.DLOAD, 16)); // sell price (lowest sell offer)
+                                repl.add(new MethodInsnNode(Opcodes.INVOKESTATIC,
+                                        "com/github/mkram17/bazaarutils/features/BaseProfit", "passesAverage",
+                                        "(Ljava/lang/String;DD)Z", false));
+                                repl.add(new JumpInsnNode(Opcodes.IFEQ, jump.label));
+                                m.instructions.insert(jump, repl);
+                                avgGate++;
+                                break;
+                            }
+                        }
+                        // open our compact settings screen instead of the stock one
+                        for (AbstractInsnNode n = m.instructions.getFirst(); n != null; n = n.getNext()) {
+                            if (n instanceof TypeInsnNode t && t.getOpcode() == Opcodes.NEW
+                                    && t.desc.equals("uwu/ramona/bazaar/config/BazaarConfigScreen")) {
+                                t.desc = "com/github/mkram17/bazaarutils/features/FlipSettingsScreen";
+                                screens++;
+                            } else if (n instanceof MethodInsnNode mi && mi.getOpcode() == Opcodes.INVOKESPECIAL
+                                    && mi.owner.equals("uwu/ramona/bazaar/config/BazaarConfigScreen") && mi.name.equals("<init>")) {
+                                mi.owner = "com/github/mkram17/bazaarutils/features/FlipSettingsScreen";
+                            }
+                        }
                         // sort orders: the first list ranks by profit/hour, the second by margin %
                         if (m.name.startsWith("lambda$perform")) {
                             for (AbstractInsnNode n = m.instructions.getFirst(); n != null; n = n.getNext()) {
@@ -143,6 +174,6 @@ public class Patch {
                 zo.closeEntry();
             }
         }
-        System.out.println("patched sites: " + patched + ", taxed: " + taxed + ", qty: " + qtyPatched + ", daemon: " + daemon + ", perHour: " + perHour + ", swapped: " + swapped + ", labels: " + labels + ", rateGate: " + rateGate);
+        System.out.println("patched sites: " + patched + ", taxed: " + taxed + ", qty: " + qtyPatched + ", daemon: " + daemon + ", perHour: " + perHour + ", swapped: " + swapped + ", labels: " + labels + ", rateGate: " + rateGate + ", avgGate: " + avgGate + ", screens: " + screens);
     }
 }
