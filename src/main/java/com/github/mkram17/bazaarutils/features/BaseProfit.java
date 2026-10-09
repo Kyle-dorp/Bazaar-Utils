@@ -36,8 +36,36 @@ public class BaseProfit {
             JsonObject o = new JsonObject();
             o.addProperty("minProfitPerItem", coins);
             o.addProperty("sellTaxPercent", taxPercent);
+            o.addProperty("minItemsPerHour", minItemsPerHour);
             Files.writeString(FILE, new Gson().toJson(o));
         } catch (Exception ignored) { }
+    }
+
+    private static volatile double minItemsPerHour = loadMinItems();
+
+    private static double loadMinItems() {
+        try {
+            if (Files.exists(FILE)) {
+                JsonObject o = new Gson().fromJson(Files.readString(FILE), JsonObject.class);
+                if (o.has("minItemsPerHour")) return o.get("minItemsPerHour").getAsDouble();
+            }
+        } catch (Exception ignored) { }
+        return 0;
+    }
+
+    public static double getMinItemsPerHour() {
+        return minItemsPerHour;
+    }
+
+    public static void setMinItemsPerHour(double value) {
+        minItemsPerHour = Math.max(0, value);
+        save();
+    }
+
+    /** Called by the patched BazaarFlip: true if the flip fills at least the minimum items per hour (slower side of 7-day volume). */
+    public static boolean passesRate(JsonObject quickStatus) {
+        if (minItemsPerHour <= 0) return true;
+        return Math.min(week(quickStatus, "buyMovingWeek"), week(quickStatus, "sellMovingWeek")) / 168.0 >= minItemsPerHour;
     }
 
     private static volatile double taxPercent = loadTax();
@@ -117,6 +145,21 @@ public class BaseProfit {
     @RunOnInit
     public static void registerCommand() {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, buildContext) -> {
+            dispatcher.register(ClientCommands.literal("flipminrate")
+                    .executes(ctx -> {
+                        PlayerActionUtil.notifyAll(minItemsPerHour <= 0
+                                ? "Min items per hour is off. Use /flipminrate <items per hour>."
+                                : "Min items per hour: " + format(minItemsPerHour));
+                        return 1;
+                    })
+                    .then(ClientCommands.argument("items", DoubleArgumentType.doubleArg(0))
+                            .executes(ctx -> {
+                                setMinItemsPerHour(DoubleArgumentType.getDouble(ctx, "items"));
+                                PlayerActionUtil.notifyAll(minItemsPerHour <= 0
+                                        ? "Min items per hour turned off."
+                                        : "Min items per hour set to " + format(minItemsPerHour) + ".");
+                                return 1;
+                            })));
             dispatcher.register(ClientCommands.literal("fliptax")
                     .executes(ctx -> {
                         PlayerActionUtil.notifyAll("Bazaar sell tax for flips: " + format(taxPercent) + "%. Use /fliptax <percent> to change it.");

@@ -11,7 +11,7 @@ public class Patch {
 
     public static void main(String[] a) throws Exception {
         Path in = Path.of(a[0]), out = Path.of(a[1]);
-        int patched = 0, taxed = 0, qtyPatched = 0, daemon = 0, perHour = 0, swapped = 0, labels = 0;
+        int patched = 0, taxed = 0, qtyPatched = 0, daemon = 0, perHour = 0, swapped = 0, labels = 0, rateGate = 0;
         try (ZipFile zf = new ZipFile(in.toFile());
              ZipOutputStream zo = new ZipOutputStream(Files.newOutputStream(out))) {
             var en = zf.entries();
@@ -75,6 +75,24 @@ public class Patch {
                                 break;
                             }
                         }
+                        // reject flips below the minimum items per hour, right after the max-margin check
+                        for (AbstractInsnNode n = m.instructions.getFirst(); n != null; n = n.getNext()) {
+                            if (n instanceof FieldInsnNode f && f.getOpcode() == Opcodes.GETSTATIC
+                                    && f.name.equals("backgroundAlertMaxThreshold")) {
+                                AbstractInsnNode j = f.getNext();
+                                while (j != null && !(j instanceof JumpInsnNode)) j = j.getNext();
+                                JumpInsnNode jump = (JumpInsnNode) j;
+                                InsnList repl = new InsnList();
+                                repl.add(new VarInsnNode(Opcodes.ALOAD, 18));
+                                repl.add(new MethodInsnNode(Opcodes.INVOKESTATIC,
+                                        "com/github/mkram17/bazaarutils/features/BaseProfit", "passesRate",
+                                        "(Lcom/google/gson/JsonObject;)Z", false));
+                                repl.add(new JumpInsnNode(Opcodes.IFEQ, jump.label));
+                                m.instructions.insert(jump, repl);
+                                rateGate++;
+                                break;
+                            }
+                        }
                         // sort orders: the first list ranks by profit/hour, the second by margin %
                         if (m.name.startsWith("lambda$perform")) {
                             for (AbstractInsnNode n = m.instructions.getFirst(); n != null; n = n.getNext()) {
@@ -125,6 +143,6 @@ public class Patch {
                 zo.closeEntry();
             }
         }
-        System.out.println("patched sites: " + patched + ", taxed: " + taxed + ", qty: " + qtyPatched + ", daemon: " + daemon + ", perHour: " + perHour + ", swapped: " + swapped + ", labels: " + labels);
+        System.out.println("patched sites: " + patched + ", taxed: " + taxed + ", qty: " + qtyPatched + ", daemon: " + daemon + ", perHour: " + perHour + ", swapped: " + swapped + ", labels: " + labels + ", rateGate: " + rateGate);
     }
 }

@@ -49,6 +49,15 @@ public class BazaarUtils implements ClientModInitializer {
     public void onInitializeClient() {
         registerDataComponents();
 
+        // Stop our background pools on exit. The Hypixel API client keeps a non-daemon thread pool that otherwise holds the
+        // JVM open after the window closes (the launcher then says the game is still running).
+        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
+            try {
+                com.github.mkram17.bazaarutils.data.APIUtils.API.shutdown();
+            } catch (Throwable ignored) { }
+            BUExecutorService.shutdownNow();
+        });
+
         BUConfig.HANDLER.load();
 
         BUCompatibilityHelper.initializePatches();
