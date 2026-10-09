@@ -11,7 +11,7 @@ public class Patch {
 
     public static void main(String[] a) throws Exception {
         Path in = Path.of(a[0]), out = Path.of(a[1]);
-        int patched = 0, taxed = 0, qtyPatched = 0, daemon = 0, perHour = 0, swapped = 0, labels = 0, rateGate = 0, avgGate = 0, screens = 0;
+        int patched = 0, taxed = 0, qtyPatched = 0, daemon = 0, perHour = 0, swapped = 0, labels = 0, rateGate = 0, page2 = 0, avgGate = 0, screens = 0;
         try (ZipFile zf = new ZipFile(in.toFile());
              ZipOutputStream zo = new ZipOutputStream(Files.newOutputStream(out))) {
             var en = zf.entries();
@@ -124,13 +124,36 @@ public class Patch {
                                 mi.owner = "com/github/mkram17/bazaarutils/features/FlipSettingsScreen";
                             }
                         }
-                        // sort orders: the first list ranks by profit/hour, the second by margin %
+                        // sort orders: every list ranks by profit/hour (totalProfit now holds it)
                         if (m.name.startsWith("lambda$perform")) {
                             for (AbstractInsnNode n = m.instructions.getFirst(); n != null; n = n.getNext()) {
                                 if (n instanceof FieldInsnNode f && f.getOpcode() == Opcodes.GETFIELD
-                                        && f.owner.equals("uwu/ramona/bazaar/BazaarFlipMod$BazaarItem")) {
-                                    if (f.name.equals("profitMargin")) { f.name = "totalProfit"; swapped++; }
-                                    else if (f.name.equals("totalProfit")) { f.name = "profitMargin"; swapped++; }
+                                        && f.owner.equals("uwu/ramona/bazaar/BazaarFlipMod$BazaarItem")
+                                        && f.name.equals("profitMargin")) { f.name = "totalProfit"; swapped++; }
+                            }
+                        }
+                        // on-screen second list = the next page: items after the first list, not a re-sort by margin
+                        if (m.name.equals("performBazaarCheck")) {
+                            int seen = 0;
+                            for (AbstractInsnNode n = m.instructions.getFirst(); n != null; n = n.getNext()) {
+                                if (n instanceof MethodInsnNode mi && mi.name.equals("subList") && ++seen == 2) {
+                                    AbstractInsnNode toLoad = mi.getPrevious();   // iload to
+                                    AbstractInsnNode fromLoad = toLoad.getPrevious(); // iconst_0
+                                    AbstractInsnNode listLoad = fromLoad.getPrevious(); // aload second list
+                                    InsnList to = new InsnList();
+                                    to.add(listLoad.clone(null));
+                                    to.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE, "java/util/List", "size", "()I", true));
+                                    to.add(new VarInsnNode(Opcodes.ILOAD, 10));
+                                    to.add(new FieldInsnNode(Opcodes.GETSTATIC, "uwu/ramona/bazaar/config/BazaarConfig",
+                                            "bazaarGuiTopItemsByMoneyCount", "I"));
+                                    to.add(new InsnNode(Opcodes.IADD));
+                                    to.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "java/lang/Math", "min", "(II)I", false));
+                                    m.instructions.insert(toLoad, to);
+                                    m.instructions.remove(toLoad);
+                                    m.instructions.insert(fromLoad, new VarInsnNode(Opcodes.ILOAD, 10));
+                                    m.instructions.remove(fromLoad);
+                                    page2++;
+                                    break;
                                 }
                             }
                         }
@@ -159,7 +182,7 @@ public class Patch {
                             if (n instanceof LdcInsnNode l && l.cst instanceof String s) {
                                 String t = s;
                                 if (t.contains("Bazaar Flips (Profit %)")) t = t.replace("(Profit %)", "(Profit/hr)");
-                                else if (t.contains("Bazaar Flips (Total Profit)")) t = t.replace("(Total Profit)", "(Profit %)");
+                                else if (t.contains("Bazaar Flips (Total Profit)")) t = t.replace("(Total Profit)", "(Next Best)");
                                 else if (t.contains("Total Profit: ")) t = t.replace("Total Profit: ", "Profit/hr: ");
                                 if (!t.equals(s)) { l.cst = t; labels++; }
                             }
@@ -174,6 +197,6 @@ public class Patch {
                 zo.closeEntry();
             }
         }
-        System.out.println("patched sites: " + patched + ", taxed: " + taxed + ", qty: " + qtyPatched + ", daemon: " + daemon + ", perHour: " + perHour + ", swapped: " + swapped + ", labels: " + labels + ", rateGate: " + rateGate + ", avgGate: " + avgGate + ", screens: " + screens);
+        System.out.println("patched sites: " + patched + ", taxed: " + taxed + ", qty: " + qtyPatched + ", daemon: " + daemon + ", perHour: " + perHour + ", swapped: " + swapped + ", labels: " + labels + ", page2: " + page2 + ", rateGate: " + rateGate + ", avgGate: " + avgGate + ", screens: " + screens);
     }
 }
