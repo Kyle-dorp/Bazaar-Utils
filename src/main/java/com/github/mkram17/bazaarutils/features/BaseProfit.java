@@ -225,6 +225,28 @@ public class BaseProfit {
         return sellPrice <= a.medianBuy() * (1 + tol) && buyPrice >= a.medianSell() * (1 - tol);
     }
 
+    /**
+     * Single-price version of the average check, used by book crafting flips. isAsk is true for a price you would sell at (the
+     * lowest sell offer) and false for one you would pay (the top buy order). Hidden while history loads, allowed if unavailable.
+     */
+    public static boolean priceOk(String id, double price, boolean isAsk) {
+        if (avgTolerance <= 0) return true;
+        Average a = averages.get(id);
+        long now = System.currentTimeMillis();
+        if (a == null || now - a.fetchedAt() > (a.failed() ? FAILED_RETRY_MS : AVERAGE_TTL_MS)) {
+            fetchAverage(id);
+            if (a == null) return false;
+        }
+        if (a.failed()) return true;
+        double tol = avgTolerance / 100.0;
+        return isAsk ? price <= a.medianBuy() * (1 + tol) : price >= a.medianSell() * (1 - tol);
+    }
+
+    /** True while price history is still being downloaded in the background. */
+    public static boolean historyLoading() {
+        return !inFlight.isEmpty();
+    }
+
     private static volatile double minItemsPerHour = loadMinItems();
 
     private static double loadMinItems() {

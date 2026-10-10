@@ -130,6 +130,39 @@ public class FlipHud {
         return sb.toString();
     }
 
+    private record Row(String title, double perHour, String line2, String line3) { }
+
+    /** BazaarFlip's flips (or dips) plus book crafting flips, in one list ranked by profit per hour. */
+    private static List<Row> rows() {
+        List<Row> out = new ArrayList<>();
+        boolean dips = BaseProfit.isDipMode();
+        for (Object it : items()) {
+            String id = id(it);
+            String third = "§6Profit: §r" + coins(d(it, "profit")) + " §e(" + String.format("%.1f", d(it, "profitMargin")) + "%)"
+                    + " §7Cost: §r" + coins(d(it, "totalBuyCost"));
+            if (dips) {
+                double dip = BaseProfit.dipPercent(id, d(it, "buyPrice"));
+                if (!Double.isNaN(dip)) {
+                    third = "§bDip: -" + String.format("%.0f", dip) + "% §7(usually §r" + coins(BaseProfit.typicalBuy(id))
+                            + "§7) §6+" + coins(d(it, "profit"));
+                }
+            }
+            out.add(new Row(ItemNames.of(id), d(it, "totalProfit"),
+                    "§7Buy: §r" + coins(d(it, "buyPrice")) + " §7| §aSell: §r" + coins(d(it, "sellPrice")), third));
+        }
+        if (!dips) {
+            BookCraft.refreshIfStale();
+            for (BookCraft.Craft c : BookCraft.get()) {
+                out.add(new Row(c.title() + " §d[craft]", c.perHour(),
+                        "§7Buy §r" + c.units() + "x " + c.fromName() + " §7@ §r" + coins(c.bid()) + " §7| §aSell: §r" + coins(c.ask()),
+                        "§6Profit: §r" + coins(c.profit()) + " §e(" + String.format("%.1f", c.profitMargin()) + "%) §7Cost: §r" + coins(c.cost())));
+            }
+        }
+        out.sort((a, b) -> Double.compare(b.perHour(), a.perHour()));
+        int cap = Math.max(1, cfgInt("bazaarGuiTopItemsByPercentageCount") + cfgInt("bazaarGuiTopItemsByMoneyCount"));
+        return out.size() > cap ? new ArrayList<>(out.subList(0, cap)) : out;
+    }
+
     // ---- rendering (called from the patched HudRenderer.renderOverlay) ----
 
     public static void render(GuiGraphicsExtractor g, int mouseX, int mouseY) {
@@ -138,7 +171,7 @@ public class FlipHud {
         Font font = mc.font;
         float s = scale();
 
-        List<Object> items = items();
+        List<Row> items = rows();
         int visible = Math.max(1, Math.min(BaseProfit.getVisibleRows(), Math.max(1, items.size())));
         int maxScroll = Math.max(0, items.size() - visible);
         scroll = Math.max(0, Math.min(scroll, maxScroll));
@@ -199,29 +232,21 @@ public class FlipHud {
             for (int i = 0; i < visible; i++) {
                 int idx = scroll + i;
                 if (idx >= items.size()) break;
-                Object it = items.get(idx);
+                Row row = items.get(idx);
                 int ry = y + TITLE_H + 3 + i * ROW_H;
                 if (i > 0) g.fill(x + 4, ry - 2, x + WIDTH - 4, ry - 1, 0x20FFFFFF);
 
-                String title = "§l#" + (idx + 1) + " " + name(id(it));
-                while (font.width(title) > WIDTH - 90 && title.length() > 6) title = title.substring(0, title.length() - 2);
-                g.text(font, title, x + 6, ry, textColor, true);
-
-                String perHour = coins(d(it, "totalProfit")) + "/hr";
-                g.text(font, "§a§l" + perHour, x + WIDTH - 6 - font.width("§l" + perHour), ry, textColor, true);
-
-                g.text(font, "§7Buy: §r" + coins(d(it, "buyPrice")) + " §7| §aSell: §r" + coins(d(it, "sellPrice")),
-                        x + 6, ry + 11, textColor, true);
-                String third = "§6Profit: §r" + coins(d(it, "profit")) + " §e(" + String.format("%.1f", d(it, "profitMargin")) + "%)"
-                        + " §7Cost: §r" + coins(d(it, "totalBuyCost"));
-                if (BaseProfit.isDipMode()) {
-                    double dip = BaseProfit.dipPercent(id(it), d(it, "buyPrice"));
-                    if (!Double.isNaN(dip)) {
-                        third = "§bDip: -" + String.format("%.0f", dip) + "% §7(usually §r" + coins(BaseProfit.typicalBuy(id(it)))
-                                + "§7) §6+" + coins(d(it, "profit"));
-                    }
+                String perHour = coins(row.perHour()) + "/hr";
+                int perHourW = font.width("§l" + perHour);
+                String title = "§l#" + (idx + 1) + " " + row.title();
+                if (font.width(title) > WIDTH - 18 - perHourW) {
+                    while (font.width(title + "..") > WIDTH - 18 - perHourW && title.length() > 6) title = title.substring(0, title.length() - 1);
+                    title += "..";
                 }
-                g.text(font, third, x + 6, ry + 22, textColor, true);
+                g.text(font, title, x + 6, ry, textColor, true);
+                g.text(font, "§a§l" + perHour, x + WIDTH - 6 - perHourW, ry, textColor, true);
+                g.text(font, row.line2(), x + 6, ry + 11, textColor, true);
+                g.text(font, row.line3(), x + 6, ry + 22, textColor, true);
             }
             if (items.size() > visible) {
                 g.text(font, "§8scroll for more", x + 6, y + height - 11, textColor, true);
