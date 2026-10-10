@@ -27,7 +27,7 @@ import org.lwjgl.glfw.GLFW;
  * Hotkey that runs /bz or /ah for the item under the cursor (or the held item when no screen is open).
  */
 public class ItemSearchHelper {
-    private static final KeyMapping.Category CATEGORY = StashHelper.CATEGORY;
+    public static final KeyMapping.Category CATEGORY = StashHelper.CATEGORY;
     private static final KeyMapping searchKey = new KeyMapping("Search Item (Bazaar or Auction House)", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_T, CATEGORY);
 
     @RunOnInit

@@ -39,8 +39,65 @@ public class BaseProfit {
             o.addProperty("minItemsPerHour", minItemsPerHour);
             o.addProperty("maxVsWeekAveragePercent", avgTolerance);
             o.addProperty("visibleRows", visibleRows);
+            o.addProperty("dipMode", dipMode);
+            o.addProperty("minDipPercent", minDipPercent);
             Files.writeString(FILE, new Gson().toJson(o));
         } catch (Exception ignored) { }
+    }
+
+    private static volatile boolean dipMode = loadBool("dipMode", false);
+    private static volatile double minDipPercent = loadDouble("minDipPercent", 30);
+
+    private static boolean loadBool(String key, boolean fallback) {
+        try {
+            if (Files.exists(FILE)) {
+                JsonObject o = new Gson().fromJson(Files.readString(FILE), JsonObject.class);
+                if (o.has(key)) return o.get(key).getAsBoolean();
+            }
+        } catch (Exception ignored) { }
+        return fallback;
+    }
+
+    private static double loadDouble(String key, double fallback) {
+        try {
+            if (Files.exists(FILE)) {
+                JsonObject o = new Gson().fromJson(Files.readString(FILE), JsonObject.class);
+                if (o.has(key)) return o.get(key).getAsDouble();
+            }
+        } catch (Exception ignored) { }
+        return fallback;
+    }
+
+    /** Dip mode: list items whose buy price is far below its 7-day normal while the sell price is still normal. */
+    public static boolean isDipMode() {
+        return dipMode;
+    }
+
+    public static void setDipMode(boolean value) {
+        dipMode = value;
+        save();
+    }
+
+    public static double getMinDipPercent() {
+        return minDipPercent;
+    }
+
+    public static void setMinDipPercent(double value) {
+        minDipPercent = Math.max(0, Math.min(99, value));
+        save();
+    }
+
+    /** How far below its 7-day normal the buy price is, in percent (negative if above), or NaN if history isn't loaded. */
+    public static double dipPercent(String id, double buyPrice) {
+        Average a = averages.get(id);
+        if (a == null || a.failed() || a.medianSell() <= 0) return Double.NaN;
+        return (a.medianSell() - buyPrice) / a.medianSell() * 100.0;
+    }
+
+    /** The item's typical 7-day buy price (what the top buy order normally is), or NaN. */
+    public static double typicalBuy(String id) {
+        Average a = averages.get(id);
+        return a == null || a.failed() ? Double.NaN : a.medianSell();
     }
 
     private static volatile int visibleRows = loadVisibleRows();
@@ -101,7 +158,7 @@ public class BaseProfit {
 
     private static final java.util.Map<String, Average> averages = new java.util.concurrent.ConcurrentHashMap<>();
     private static final java.util.Set<String> inFlight = java.util.concurrent.ConcurrentHashMap.newKeySet();
-    private static final java.util.concurrent.ExecutorService historyFetcher = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+    private static final java.util.concurrent.ExecutorService historyFetcher = java.util.concurrent.Executors.newFixedThreadPool(4, r -> {
         Thread t = new Thread(r, "BazaarFlip-history");
         t.setDaemon(true);
         return t;
@@ -152,15 +209,19 @@ public class BaseProfit {
      * While the history for an item is still loading it is hidden; if history is unavailable it is let through.
      */
     public static boolean passesAverage(String id, double buyPrice, double sellPrice) {
-        if (avgTolerance <= 0) return true;
+        if (avgTolerance <= 0 && !dipMode) return true;
         Average a = averages.get(id);
         long now = System.currentTimeMillis();
         if (a == null || now - a.fetchedAt() > (a.failed() ? FAILED_RETRY_MS : AVERAGE_TTL_MS)) {
             fetchAverage(id);
             if (a == null) return false;
         }
-        if (a.failed()) return true;
-        double tol = avgTolerance / 100.0;
+        if (a.failed()) return !dipMode; // in dip mode an unverified item is not a dip
+        double tol = (avgTolerance > 0 ? avgTolerance : 25) / 100.0;
+        if (dipMode) {
+            // cheap to buy (buy price well under its normal) but the sell price is still believable
+            return buyPrice <= a.medianSell() * (1 - minDipPercent / 100.0) && sellPrice <= a.medianBuy() * (1 + tol);
+        }
         return sellPrice <= a.medianBuy() * (1 + tol) && buyPrice >= a.medianSell() * (1 - tol);
     }
 

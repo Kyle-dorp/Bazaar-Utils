@@ -1,14 +1,21 @@
 package com.github.mkram17.bazaarutils.features;
 
 import com.github.mkram17.bazaarutils.misc.autoregistration.RunOnInit;
+import com.github.mkram17.bazaarutils.utils.PlayerActionUtil;
+import com.mojang.blaze3d.platform.InputConstants;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenKeyboardEvents;
+import net.minecraft.client.KeyMapping;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import org.lwjgl.glfw.GLFW;
 
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
@@ -180,7 +187,7 @@ public class FlipHud {
         g.fill(x + WIDTH - 1, y, x + WIDTH, y + height, border);
         g.fill(x, y + TITLE_H, x + WIDTH, y + TITLE_H + 1, 0x30FFFFFF);
 
-        g.text(font, "§l§eBazaar Flips (Profit/hr)", x + 6, y + 7, textColor, true);
+        g.text(font, BaseProfit.isDipMode() ? "§l§bBazaar Dips (Profit/hr)" : "§l§eBazaar Flips (Profit/hr)", x + 6, y + 7, textColor, true);
         if (!items.isEmpty()) {
             String range = (scroll + 1) + "-" + (scroll + visible) + " / " + items.size();
             g.text(font, "§7" + range, x + WIDTH - 6 - font.width(range), y + 7, textColor, true);
@@ -205,8 +212,16 @@ public class FlipHud {
 
                 g.text(font, "§7Buy: §r" + coins(d(it, "buyPrice")) + " §7| §aSell: §r" + coins(d(it, "sellPrice")),
                         x + 6, ry + 11, textColor, true);
-                g.text(font, "§6Profit: §r" + coins(d(it, "profit")) + " §e(" + String.format("%.1f", d(it, "profitMargin")) + "%)"
-                        + " §7Cost: §r" + coins(d(it, "totalBuyCost")), x + 6, ry + 22, textColor, true);
+                String third = "§6Profit: §r" + coins(d(it, "profit")) + " §e(" + String.format("%.1f", d(it, "profitMargin")) + "%)"
+                        + " §7Cost: §r" + coins(d(it, "totalBuyCost"));
+                if (BaseProfit.isDipMode()) {
+                    double dip = BaseProfit.dipPercent(id(it), d(it, "buyPrice"));
+                    if (!Double.isNaN(dip)) {
+                        third = "§bDip: -" + String.format("%.0f", dip) + "% §7(usually §r" + coins(BaseProfit.typicalBuy(id(it)))
+                                + "§7) §6+" + coins(d(it, "profit"));
+                    }
+                }
+                g.text(font, third, x + 6, ry + 22, textColor, true);
             }
             if (items.size() > visible) {
                 g.text(font, "§8scroll for more", x + 6, y + height - 11, textColor, true);
@@ -224,5 +239,47 @@ public class FlipHud {
                     scroll = Math.max(0, scroll - (int) Math.signum(vertical));
                     return false; // handled: do not also scroll the inventory behind it
                 }));
+    }
+
+    // ---- flips / dips mode toggle ----
+
+    private static final KeyMapping modeKey = new KeyMapping("Toggle Flips / Dips list", InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_Y, com.github.mkram17.bazaarutils.features.keybinds.ItemSearchHelper.CATEGORY);
+
+    /** Switches the list between stable flips and dips, and refreshes it right away instead of waiting for the next poll. */
+    public static void toggleMode(Boolean forceDips) {
+        boolean dips = forceDips != null ? forceDips : !BaseProfit.isDipMode();
+        BaseProfit.setDipMode(dips);
+        scroll = 0;
+        PlayerActionUtil.notifyAll("List mode: " + (dips ? "DIPS (cheap vs 7-day normal)" : "FLIPS (stable spreads)"));
+        Thread t = new Thread(() -> {
+            try {
+                Class<?> mod = Class.forName(MOD);
+                mod.getMethod("performBazaarCheck").invoke(null);
+                Thread.sleep(8000); // dip mode needs the 7-day history, which loads in the background on the first pass
+                mod.getMethod("performBazaarCheck").invoke(null);
+            } catch (Exception ignored) { }
+        }, "BazaarFlip-mode-refresh");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    @RunOnInit
+    public static void registerModeToggle() {
+        KeyMappingHelper.registerKeyMapping(modeKey);
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            while (modeKey.consumeClick()) {
+                if (client.player != null && com.github.mkram17.bazaarutils.utils.VersionCompat.getScreen(client) == null) toggleMode(null);
+            }
+        });
+        ScreenEvents.AFTER_INIT.register((client, screen, w, h) ->
+                ScreenKeyboardEvents.afterKeyPress(screen).register((s, keyEvent) -> {
+                    if (modeKey.matches(keyEvent) && screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>) toggleMode(null);
+                }));
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, buildContext) ->
+                dispatcher.register(ClientCommands.literal("flipmode")
+                        .executes(ctx -> { toggleMode(null); return 1; })
+                        .then(ClientCommands.literal("flips").executes(ctx -> { toggleMode(false); return 1; }))
+                        .then(ClientCommands.literal("dips").executes(ctx -> { toggleMode(true); return 1; }))));
     }
 }
