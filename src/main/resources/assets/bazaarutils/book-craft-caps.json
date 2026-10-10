@@ -1,0 +1,881 @@
+{
+ "source": "hypixelskyblock.minecraft.wiki, fetched 2026-10-10",
+ "caps": {
+  "AIMING": {
+   "maxCraftTier": 5,
+   "wikiPage": "Dragon Tracer",
+   "source": "Obtaining table: Enchantment Table up to tier 5"
+  },
+  "ANGLER": {
+   "maxCraftTier": 5,
+   "wikiPage": "Angler",
+   "source": "Obtaining table: Enchantment Table up to tier 5"
+  },
+  "AQUA_AFFINITY": {
+   "maxCraftTier": 1,
+   "wikiPage": "Aqua Affinity",
+   "source": "Obtaining table: Enchantment Table up to tier 1"
+  },
+  "ARCANE": {
+   "maxCraftTier": 5,
+   "wikiPage": "Woodsplitter",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Woodsplitter V}}"
+  },
+  "BANE_OF_ARTHROPODS": {
+   "maxCraftTier": 5,
+   "wikiPage": "Bane of Arthropods",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Bane of Arthropods V}}"
+  },
+  "BIG_BRAIN": {
+   "maxCraftTier": 5,
+   "wikiPage": "Big Brain",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Big Brain V}}"
+  },
+  "BUG_BLENDER": {
+   "maxCraftTier": 5,
+   "wikiPage": "Bug Blender",
+   "source": "can be combined in an {{Item|Anvil}}, up to {{Ench|Bug Blender V}}"
+  },
+  "CASTER": {
+   "maxCraftTier": 5,
+   "wikiPage": "Caster",
+   "source": "Obtaining table: Enchantment Table up to tier 5"
+  },
+  "CAYENNE": {
+   "maxCraftTier": 5,
+   "wikiPage": "Cayenne",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Cayenne V}}"
+  },
+  "CHANCE": {
+   "maxCraftTier": 3,
+   "wikiPage": "Chance",
+   "source": "Obtaining table: Enchantment Table up to tier 3"
+  },
+  "CHARM": {
+   "maxCraftTier": 5,
+   "wikiPage": "Charm",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Charm V}}"
+  },
+  "CLEAVE": {
+   "maxCraftTier": 5,
+   "wikiPage": "Cleave",
+   "source": "Obtaining table: Enchantment Table up to tier 5"
+  },
+  "CORRUPTION": {
+   "maxCraftTier": 5,
+   "wikiPage": "Corruption",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Corruption V}}"
+  },
+  "CRITICAL": {
+   "maxCraftTier": 5,
+   "wikiPage": "Critical",
+   "source": "Obtaining table: Enchantment Table up to tier 5"
+  },
+  "CUBISM": {
+   "maxCraftTier": 5,
+   "wikiPage": "Cubism",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Cubism V}}"
+  },
+  "DEDICATION": {
+   "maxCraftTier": 3,
+   "wikiPage": "Dedication",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Dedication III}}"
+  },
+  "DEPTH_STRIDER": {
+   "maxCraftTier": 3,
+   "wikiPage": "Depth Strider",
+   "source": "Obtaining table: Enchantment Table up to tier 3"
+  },
+  "DIVINE_GIFT": {
+   "maxCraftTier": 3,
+   "wikiPage": "Divine Gift",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Divine Gift III}}"
+  },
+  "DRAGON_HUNTER": {
+   "maxCraftTier": 5,
+   "wikiPage": "Gravity",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Gravity V}}"
+  },
+  "EFFICIENCY": {
+   "maxCraftTier": 5,
+   "wikiPage": "Efficiency",
+   "source": "Obtaining table: Enchantment Table up to tier 5"
+  },
+  "ENDER_SLAYER": {
+   "maxCraftTier": 5,
+   "wikiPage": "Ender Slayer",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Ender Slayer V}}"
+  },
+  "EXECUTE": {
+   "maxCraftTier": 5,
+   "wikiPage": "Execute",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Execute V}}"
+  },
+  "EXPERIENCE": {
+   "maxCraftTier": 3,
+   "wikiPage": "Experience (Enchantment)",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Experience III}}"
+  },
+  "FEAST": {
+   "maxCraftTier": 5,
+   "wikiPage": "Feast",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Feast V}}"
+  },
+  "FEATHER_FALLING": {
+   "maxCraftTier": 10,
+   "wikiPage": "Feather Falling",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Feather Falling X}}"
+  },
+  "FEROCIOUS_MANA": {
+   "maxCraftTier": 10,
+   "wikiPage": "Vivacious Vitality",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Vivacious Vitality X}}"
+  },
+  "FIRE_ASPECT": {
+   "maxCraftTier": 2,
+   "wikiPage": "Fire Aspect",
+   "source": "Obtaining table: Enchantment Table up to tier 2"
+  },
+  "FIRE_PROTECTION": {
+   "maxCraftTier": 5,
+   "wikiPage": "Fire Protection",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Fire Protection V}}"
+  },
+  "FIRST_STRIKE": {
+   "maxCraftTier": 4,
+   "wikiPage": "First Strike",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|First Strike IV}}"
+  },
+  "FLAME": {
+   "maxCraftTier": 2,
+   "wikiPage": "Flame",
+   "source": "Obtaining table: Enchantment Table up to tier 2"
+  },
+  "FOREST_PLEDGE": {
+   "maxCraftTier": 5,
+   "wikiPage": "Forest Pledge",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Forest Pledge V}}"
+  },
+  "FRAIL": {
+   "maxCraftTier": 5,
+   "wikiPage": "Frail",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Frail V}}"
+  },
+  "GIANT_KILLER": {
+   "maxCraftTier": 5,
+   "wikiPage": "Giant Killer",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Giant Killer V}}"
+  },
+  "GREEN_THUMB": {
+   "maxCraftTier": 5,
+   "wikiPage": "Green Thumb (Enchantment)",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Green Thumb V}}"
+  },
+  "GROWTH": {
+   "maxCraftTier": 5,
+   "wikiPage": "Growth",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Growth V}}"
+  },
+  "HARDENED_MANA": {
+   "maxCraftTier": 10,
+   "wikiPage": "Hardened Vitality",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Hardened Vitality X}}"
+  },
+  "ICE_COLD": {
+   "maxCraftTier": 5,
+   "wikiPage": "Ice Cold",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Ice Cold V}}"
+  },
+  "IMPALING": {
+   "maxCraftTier": 5,
+   "wikiPage": "Impaling",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Impaling V}}"
+  },
+  "INFINITE_QUIVER": {
+   "maxCraftTier": 10,
+   "wikiPage": "Infinite Quiver",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Infinite Quiver X}}"
+  },
+  "KARMA": {
+   "maxCraftTier": 5,
+   "wikiPage": "Karma",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Karma V}}"
+  },
+  "KNOCKBACK": {
+   "maxCraftTier": 2,
+   "wikiPage": "Knockback (Enchantment)",
+   "source": "Obtaining table: Enchantment Table up to tier 2"
+  },
+  "LAPIDARY": {
+   "maxCraftTier": 5,
+   "wikiPage": "Lapidary",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Lapidary V}}"
+  },
+  "LETHALITY": {
+   "maxCraftTier": 5,
+   "wikiPage": "Lethality",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Lethality V}}"
+  },
+  "LIFE_STEAL": {
+   "maxCraftTier": 3,
+   "wikiPage": "Life Steal",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Life Steal III}}"
+  },
+  "LOOTING": {
+   "maxCraftTier": 3,
+   "wikiPage": "Looting",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Looting III}}"
+  },
+  "LUCK": {
+   "maxCraftTier": 5,
+   "wikiPage": "Luck",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Luck V}}"
+  },
+  "LUCK_OF_THE_SEA": {
+   "maxCraftTier": 5,
+   "wikiPage": "Luck of the Sea",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Luck of the Sea V}}"
+  },
+  "LURE": {
+   "maxCraftTier": 5,
+   "wikiPage": "Lure",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Lure V}}"
+  },
+  "MAGMARIZER": {
+   "maxCraftTier": 5,
+   "wikiPage": "Pyroclasm",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Pyroclasm V}}"
+  },
+  "MAGNET": {
+   "maxCraftTier": 5,
+   "wikiPage": "Magnet",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Magnet V}}"
+  },
+  "MANA_STEAL": {
+   "maxCraftTier": 3,
+   "wikiPage": "Mana Steal",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Mana Steal III}}"
+  },
+  "MANA_VAMPIRE": {
+   "maxCraftTier": 10,
+   "wikiPage": "Vampiric Vitality",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Vampiric Vitality X}}"
+  },
+  "OVERLOAD": {
+   "maxCraftTier": 5,
+   "wikiPage": "Overload",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Overload V}}"
+  },
+  "PALEONTOLOGIST": {
+   "maxCraftTier": 5,
+   "wikiPage": "Paleontologist",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Paleontologist V}}"
+  },
+  "PESTERMINATOR": {
+   "maxCraftTier": 5,
+   "wikiPage": "Pesterminator",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Pesterminator V}}"
+  },
+  "PETALFALL": {
+   "maxCraftTier": 5,
+   "wikiPage": "Petalfall",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Petalfall V}}"
+  },
+  "PIERCING": {
+   "maxCraftTier": 1,
+   "wikiPage": "Piercing",
+   "source": "Obtaining table: Enchantment Table up to tier 1"
+  },
+  "PISCARY": {
+   "maxCraftTier": 5,
+   "wikiPage": "Piscary",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Piscary V}}"
+  },
+  "POWER": {
+   "maxCraftTier": 5,
+   "wikiPage": "Power",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Power V}}"
+  },
+  "PRISTINE": {
+   "maxCraftTier": 5,
+   "wikiPage": "Prismatic",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Prismatic V}}"
+  },
+  "PROSECUTE": {
+   "maxCraftTier": 5,
+   "wikiPage": "Prosecute",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Prosecute V}}"
+  },
+  "PROSPERITY": {
+   "maxCraftTier": 5,
+   "wikiPage": "Prosperity",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Prosperity V}}"
+  },
+  "PROTECTION": {
+   "maxCraftTier": 5,
+   "wikiPage": "Protection",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Protection V}}"
+  },
+  "PUNCH": {
+   "maxCraftTier": 2,
+   "wikiPage": "Punch",
+   "source": "Obtaining table: Enchantment Table up to tier 2"
+  },
+  "QUANTUM": {
+   "maxCraftTier": 5,
+   "wikiPage": "Quantum",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Quantum V}}"
+  },
+  "QUICK_BITE": {
+   "maxCraftTier": 5,
+   "wikiPage": "Quick Bite",
+   "source": "can be combined in an [[Anvil]], up to {{Ench|Quick Bite V}}"
+  },
+  "REFLECTION": {
+   "maxCraftTier": 5,
+   "wikiPage": "Reflection",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Reflection V}}"
+  },
+  "REJUVENATE": {
+   "maxCraftTier": 5,
+   "wikiPage": "Rejuvenate",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Rejuvenate V}}"
+  },
+  "RESPIRATION": {
+   "maxCraftTier": 3,
+   "wikiPage": "Respiration (Enchantment)",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Respiration III}}"
+  },
+  "RESPITE": {
+   "maxCraftTier": 5,
+   "wikiPage": "Respite",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Respite V}}"
+  },
+  "SCAVENGER": {
+   "maxCraftTier": 3,
+   "wikiPage": "Scavenger",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Scavenger III}}"
+  },
+  "SCUBA": {
+   "maxCraftTier": 5,
+   "wikiPage": "Scuba",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Scuba V}}"
+  },
+  "SHARPNESS": {
+   "maxCraftTier": 5,
+   "wikiPage": "Sharpness",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Sharpness V}}"
+  },
+  "SILK_TOUCH": {
+   "maxCraftTier": 1,
+   "wikiPage": "Silk Touch",
+   "source": "Obtaining table: Enchantment Table up to tier 1"
+  },
+  "SMALL_BRAIN": {
+   "maxCraftTier": 5,
+   "wikiPage": "Small Brain",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Small Brain V}}"
+  },
+  "SMARTY_PANTS": {
+   "maxCraftTier": 5,
+   "wikiPage": "Smarty Pants",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Smarty Pants V}}"
+  },
+  "SMELTING_TOUCH": {
+   "maxCraftTier": 1,
+   "wikiPage": "Smelting Touch",
+   "source": "Obtaining table: Enchantment Table up to tier 1"
+  },
+  "SMITE": {
+   "maxCraftTier": 5,
+   "wikiPage": "Smite",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Smite V}}"
+  },
+  "SMOLDERING": {
+   "maxCraftTier": 5,
+   "wikiPage": "Smoldering",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Smoldering V}}"
+  },
+  "SNIPE": {
+   "maxCraftTier": 3,
+   "wikiPage": "Snipe",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Snipe III}}"
+  },
+  "SPIKED_HOOK": {
+   "maxCraftTier": 5,
+   "wikiPage": "Spiked Hook",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Spiked Hook V}}"
+  },
+  "STEALTH": {
+   "maxCraftTier": 5,
+   "wikiPage": "Stealth",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Stealth V}}"
+  },
+  "STRONG_MANA": {
+   "maxCraftTier": 10,
+   "wikiPage": "Strong Vitality",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Strong Vitality X}}"
+  },
+  "SUGAR_RUSH": {
+   "maxCraftTier": 3,
+   "wikiPage": "Sugar Rush",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Sugar Rush III}}"
+  },
+  "SYPHON": {
+   "maxCraftTier": 3,
+   "wikiPage": "Drain",
+   "source": "Obtaining table: Enchantment Table up to tier 3"
+  },
+  "TABASCO": {
+   "maxCraftTier": 3,
+   "wikiPage": "Tabasco",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Tabasco III}}"
+  },
+  "THORNS": {
+   "maxCraftTier": 3,
+   "wikiPage": "Thorns",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Thorns III}}"
+  },
+  "THUNDERBOLT": {
+   "maxCraftTier": 5,
+   "wikiPage": "Thunderbolt",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Thunderbolt V}}"
+  },
+  "THUNDERLORD": {
+   "maxCraftTier": 5,
+   "wikiPage": "Thunderlord",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Thunderlord V}}"
+  },
+  "TIDAL": {
+   "maxCraftTier": 3,
+   "wikiPage": "Tidal",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Tidal III}}"
+  },
+  "TITAN_KILLER": {
+   "maxCraftTier": 5,
+   "wikiPage": "Titan Killer",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Titan Killer V}}"
+  },
+  "TRANSYLVANIAN": {
+   "maxCraftTier": 5,
+   "wikiPage": "Transylvanian",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Transylvanian V}}"
+  },
+  "TRIPLE_STRIKE": {
+   "maxCraftTier": 4,
+   "wikiPage": "Triple-Strike",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Triple-Strike IV}}"
+  },
+  "TURBO_CACTUS": {
+   "maxCraftTier": 5,
+   "wikiPage": "Turbo-Crop",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Turbo-Crop V}}"
+  },
+  "TURBO_CANE": {
+   "maxCraftTier": 5,
+   "wikiPage": "Turbo-Crop",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Turbo-Crop V}}"
+  },
+  "TURBO_CARROT": {
+   "maxCraftTier": 5,
+   "wikiPage": "Turbo-Crop",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Turbo-Crop V}}"
+  },
+  "TURBO_COCO": {
+   "maxCraftTier": 5,
+   "wikiPage": "Turbo-Crop",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Turbo-Crop V}}"
+  },
+  "TURBO_MELON": {
+   "maxCraftTier": 5,
+   "wikiPage": "Turbo-Crop",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Turbo-Crop V}}"
+  },
+  "TURBO_MOONFLOWER": {
+   "maxCraftTier": 5,
+   "wikiPage": "Turbo-Crop",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Turbo-Crop V}}"
+  },
+  "TURBO_MUSHROOMS": {
+   "maxCraftTier": 5,
+   "wikiPage": "Turbo-Crop",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Turbo-Crop V}}"
+  },
+  "TURBO_POTATO": {
+   "maxCraftTier": 5,
+   "wikiPage": "Turbo-Crop",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Turbo-Crop V}}"
+  },
+  "TURBO_PUMPKIN": {
+   "maxCraftTier": 5,
+   "wikiPage": "Turbo-Crop",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Turbo-Crop V}}"
+  },
+  "TURBO_ROSE": {
+   "maxCraftTier": 5,
+   "wikiPage": "Turbo-Crop",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Turbo-Crop V}}"
+  },
+  "TURBO_SUNFLOWER": {
+   "maxCraftTier": 5,
+   "wikiPage": "Turbo-Crop",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Turbo-Crop V}}"
+  },
+  "TURBO_WARTS": {
+   "maxCraftTier": 5,
+   "wikiPage": "Turbo-Crop",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Turbo-Crop V}}"
+  },
+  "TURBO_WHEAT": {
+   "maxCraftTier": 5,
+   "wikiPage": "Turbo-Crop",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Turbo-Crop V}}"
+  },
+  "ULTIMATE_BANK": {
+   "maxCraftTier": 5,
+   "wikiPage": "Bank (Enchantment)",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Bank V}}"
+  },
+  "ULTIMATE_BOBBIN_TIME": {
+   "maxCraftTier": 5,
+   "wikiPage": "Bobbin' Time",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Bobbin' Time V}}"
+  },
+  "ULTIMATE_CHIMERA": {
+   "maxCraftTier": 5,
+   "wikiPage": "Chimera",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Chimera V}}"
+  },
+  "ULTIMATE_COMBO": {
+   "maxCraftTier": 5,
+   "wikiPage": "Combo",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Combo V}}"
+  },
+  "ULTIMATE_CROP_FEVER": {
+   "maxCraftTier": 5,
+   "wikiPage": "Crop Fever",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Crop Fever V}}"
+  },
+  "ULTIMATE_FATAL_TEMPO": {
+   "maxCraftTier": 5,
+   "wikiPage": "Fatal Tempo",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Fatal Tempo V}}"
+  },
+  "ULTIMATE_FIRST_IMPRESSION": {
+   "maxCraftTier": 5,
+   "wikiPage": "First Impression",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|First Impression V}}"
+  },
+  "ULTIMATE_FLASH": {
+   "maxCraftTier": 5,
+   "wikiPage": "Flash",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Flash V}}"
+  },
+  "ULTIMATE_FLOWSTATE": {
+   "maxCraftTier": 3,
+   "wikiPage": "Flowstate",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Flowstate III}}"
+  },
+  "ULTIMATE_HABANERO_TACTICS": {
+   "maxCraftTier": 5,
+   "wikiPage": "Habanero Tactics",
+   "source": "can be combined in an [[Anvil]], up to {{Ench|Habanero Tactics V}}"
+  },
+  "ULTIMATE_INFERNO": {
+   "maxCraftTier": 5,
+   "wikiPage": "Inferno",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Inferno V}}"
+  },
+  "ULTIMATE_JERRY": {
+   "maxCraftTier": 5,
+   "wikiPage": "Ultimate Jerry",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Ultimate Jerry V}}"
+  },
+  "ULTIMATE_LAST_STAND": {
+   "maxCraftTier": 5,
+   "wikiPage": "Last Stand",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Last Stand V}}"
+  },
+  "ULTIMATE_LEGION": {
+   "maxCraftTier": 5,
+   "wikiPage": "Legion",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Legion V}}"
+  },
+  "ULTIMATE_MISSILE": {
+   "maxCraftTier": 5,
+   "wikiPage": "Missile",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Missile V}}"
+  },
+  "ULTIMATE_NO_PAIN_NO_GAIN": {
+   "maxCraftTier": 5,
+   "wikiPage": "No Pain No Gain",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|No Pain No Gain V}}"
+  },
+  "ULTIMATE_REFRIGERATE": {
+   "maxCraftTier": 5,
+   "wikiPage": "Refrigerate",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Refrigerate V}}"
+  },
+  "ULTIMATE_REITERATE": {
+   "maxCraftTier": 5,
+   "wikiPage": "Duplex",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Duplex V}}"
+  },
+  "ULTIMATE_REND": {
+   "maxCraftTier": 5,
+   "wikiPage": "Rend",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Rend V}}"
+  },
+  "ULTIMATE_SOUL_EATER": {
+   "maxCraftTier": 5,
+   "wikiPage": "Soul Eater",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Soul Eater V}}"
+  },
+  "ULTIMATE_SUNSET": {
+   "maxCraftTier": 5,
+   "wikiPage": "Sunset",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Sunset V}}"
+  },
+  "ULTIMATE_SWARM": {
+   "maxCraftTier": 5,
+   "wikiPage": "Swarm",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Swarm V}}"
+  },
+  "ULTIMATE_THE_ONE": {
+   "maxCraftTier": 5,
+   "wikiPage": "The One",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|The One V}}"
+  },
+  "ULTIMATE_WISDOM": {
+   "maxCraftTier": 5,
+   "wikiPage": "Wisdom (Enchantment)",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Wisdom V}}"
+  },
+  "ULTIMATE_WISE": {
+   "maxCraftTier": 5,
+   "wikiPage": "Ultimate Wise",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Ultimate Wise V}}"
+  },
+  "VAMPIRISM": {
+   "maxCraftTier": 5,
+   "wikiPage": "Vampirism",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Vampirism V}}"
+  },
+  "VENOMOUS": {
+   "maxCraftTier": 3,
+   "wikiPage": "Venomous",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Venomous III}}"
+  },
+  "VICIOUS": {
+   "maxCraftTier": 5,
+   "wikiPage": "Vicious",
+   "source": "can be combined on an {{Item|Anvil}} up to {{Ench|Vicious V}}"
+  }
+ },
+ "unresolved": {
+  "ABSORB": {
+   "displayName": "Absorb",
+   "tiersOnBazaar": [
+    1
+   ]
+  },
+  "BLAST_PROTECTION": {
+   "displayName": "Blast Protection",
+   "tiersOnBazaar": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ]
+  },
+  "BLESSING": {
+   "displayName": "Blessing",
+   "tiersOnBazaar": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ]
+  },
+  "CHAMPION": {
+   "displayName": "Champion",
+   "tiersOnBazaar": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10
+   ]
+  },
+  "COMPACT": {
+   "displayName": "Compact",
+   "tiersOnBazaar": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10
+   ]
+  },
+  "COUNTER_STRIKE": {
+   "displayName": "Counter-Strike",
+   "tiersOnBazaar": [
+    3,
+    4,
+    5
+   ]
+  },
+  "CULTIVATING": {
+   "displayName": "Cultivating",
+   "tiersOnBazaar": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+   ]
+  },
+  "CURSE_OF_VANISHING": {
+   "displayName": "Curse Of Vanishing 0",
+   "tiersOnBazaar": [
+    0
+   ]
+  },
+  "DELICATE": {
+   "displayName": "Delicate",
+   "tiersOnBazaar": [
+    5
+   ]
+  },
+  "EXPERTISE": {
+   "displayName": "Expertise",
+   "tiersOnBazaar": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10
+   ]
+  },
+  "FORTUNE": {
+   "displayName": "Fortune",
+   "tiersOnBazaar": [
+    1,
+    2,
+    3,
+    4
+   ]
+  },
+  "FROST_WALKER": {
+   "displayName": "Frost Walker",
+   "tiersOnBazaar": [
+    1,
+    2
+   ]
+  },
+  "HARVESTING": {
+   "displayName": "Harvesting",
+   "tiersOnBazaar": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ]
+  },
+  "HECATOMB": {
+   "displayName": "Hecatomb",
+   "tiersOnBazaar": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10
+   ]
+  },
+  "PROJECTILE_PROTECTION": {
+   "displayName": "Projectile Protection",
+   "tiersOnBazaar": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ]
+  },
+  "REPLENISH": {
+   "displayName": "Replenish",
+   "tiersOnBazaar": [
+    1
+   ]
+  },
+  "SUNDER": {
+   "displayName": "Sunder",
+   "tiersOnBazaar": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ]
+  },
+  "TOXOPHILITE": {
+   "displayName": "Toxophilite",
+   "tiersOnBazaar": [
+    1
+   ]
+  },
+  "TRUE_PROTECTION": {
+   "displayName": "True Protection",
+   "tiersOnBazaar": [
+    1
+   ]
+  },
+  "ULTIMATE_ONE_FOR_ALL": {
+   "displayName": "One For All 0",
+   "tiersOnBazaar": [
+    0,
+    1
+   ]
+  },
+  "WITHER_HUNTER": {
+   "displayName": "Wither Hunter 0",
+   "tiersOnBazaar": [
+    0
+   ]
+  }
+ }
+}

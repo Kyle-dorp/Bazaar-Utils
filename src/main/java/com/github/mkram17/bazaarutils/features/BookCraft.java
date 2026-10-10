@@ -86,6 +86,7 @@ public class BookCraft {
                     week(qs, "sellMovingWeek") / 168.0, week(qs, "buyMovingWeek") / 168.0));
         }
 
+        loadOverrides();
         double tax = BaseProfit.getTaxPercent() / 100.0;
         double minProfit = BaseProfit.getCoins();
         double minRate = BaseProfit.getMinItemsPerHour();
@@ -93,6 +94,8 @@ public class BookCraft {
         for (TreeMap<Integer, Tier> fam : families.values()) {
             for (Tier target : fam.values()) {
                 if (target.tier() < 2 || target.ask() <= 0) continue;
+                if (neverCraft.contains(target.id())) continue;
+                if (!alwaysCraft.contains(target.id()) && !craftable(target)) continue;
                 Craft best = null;
                 for (Tier base : fam.headMap(target.tier()).values()) {
                     if (base.bid() <= 0) continue;
@@ -119,6 +122,56 @@ public class BookCraft {
         }
         out.sort((a, b) -> Double.compare(b.perHour(), a.perHour()));
         return out;
+    }
+
+    /**
+     * Highest tier each enchant can be combined up to on an anvil, from the Hypixel SkyBlock wiki (bundled
+     * book-craft-caps.json, built by tools/book-caps/build_caps.py). Each entry keeps the wiki sentence or table row it came
+     * from, e.g. "can be combined on an Anvil up to Sharpness V". Enchants the wiki doesn't state are absent, and absent
+     * means not craftable: no craft is shown rather than a guessed one. The override file can add or remove any book.
+     */
+    private static final Map<String, Integer> CAPS = loadCaps();
+
+    private static Map<String, Integer> loadCaps() {
+        Map<String, Integer> caps = new HashMap<>();
+        try (InputStream in = BookCraft.class.getResourceAsStream("/assets/bazaarutils/book-craft-caps.json")) {
+            if (in != null) {
+                JsonObject o = JsonParser.parseString(new String(in.readAllBytes())).getAsJsonObject().getAsJsonObject("caps");
+                for (var e : o.entrySet()) caps.put(e.getKey(), e.getValue().getAsJsonObject().get("maxCraftTier").getAsInt());
+            }
+        } catch (Exception ignored) { }
+        return caps;
+    }
+
+    private static boolean craftable(Tier target) {
+        Matcher m = BOOK.matcher(target.id());
+        if (!m.matches()) return false;
+        Integer cap = CAPS.get(m.group(1));
+        return cap != null && target.tier() <= cap;
+    }
+
+    private static final java.nio.file.Path OVERRIDES = net.fabricmc.loader.api.FabricLoader.getInstance().getConfigDir()
+            .resolve("bazaarflip-books.json");
+    private static Set<String> neverCraft = Set.of();
+    private static Set<String> alwaysCraft = Set.of();
+
+    /** config/bazaarflip-books.json: {"neverCraft": ["ENCHANTMENT_LOOTING_5"], "alwaysCraft": ["ENCHANTMENT_SOMETHING_6"]} */
+    private static void loadOverrides() {
+        Set<String> never = new HashSet<>(), always = new HashSet<>();
+        try {
+            if (java.nio.file.Files.exists(OVERRIDES)) {
+                JsonObject o = JsonParser.parseString(java.nio.file.Files.readString(OVERRIDES)).getAsJsonObject();
+                if (o.has("neverCraft")) o.getAsJsonArray("neverCraft").forEach(e -> never.add(e.getAsString()));
+                if (o.has("alwaysCraft")) o.getAsJsonArray("alwaysCraft").forEach(e -> always.add(e.getAsString()));
+            } else {
+                JsonObject o = new JsonObject();
+                o.add("neverCraft", new JsonArray());
+                o.add("alwaysCraft", new JsonArray());
+                java.nio.file.Files.writeString(OVERRIDES, new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(o));
+            }
+        } catch (Exception ignored) { }
+        neverCraft = never;
+        alwaysCraft = always;
     }
 
     private static double week(JsonObject qs, String field) {
