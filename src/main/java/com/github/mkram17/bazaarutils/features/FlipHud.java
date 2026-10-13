@@ -130,6 +130,19 @@ public class FlipHud {
         return sb.toString();
     }
 
+    /** "Howling Spirit Shard" -> "Howling Spirit": every input is a shard, so the word only costs space. */
+    private static String shardName(String id) {
+        String n = ItemNames.of(id);
+        return n.endsWith(" Shard") ? n.substring(0, n.length() - 6) : n;
+    }
+
+    /** Cuts a line so it never runs past the panel edge. */
+    private static String fit(Font font, String text, int max) {
+        if (font.width(text) <= max) return text;
+        while (text.length() > 4 && font.width(text + "..") > max) text = text.substring(0, text.length() - 1);
+        return text + "..";
+    }
+
     private record Row(String title, double perHour, String line2, String line3) { }
 
     /** BazaarFlip's flips (or dips) plus book crafting flips, in one list ranked by profit per hour. */
@@ -139,12 +152,11 @@ public class FlipHud {
             FusionCalc.refreshIfStale();
             for (FusionCalc.Fusion f : FusionCalc.get()) {
                 out.add(new Row(f.outputCount() + "x " + ItemNames.of(f.output()) + " §d[" + f.type().toLowerCase() + "]", f.perHour(),
-                        "§7Buy " + f.leftCount() + "x " + ItemNames.of(f.left()) + " @ §r" + coins(f.leftBid())
-                                + " §7+ " + f.rightCount() + "x " + ItemNames.of(f.right()) + " @ §r" + coins(f.rightBid()),
-                        // every number for the whole fusion: cost of all inputs, all output shards sold after tax, profit
-                        "§7Cost §r" + coins(f.cost()) + " §7-> §aSell " + f.outputCount() + "x" + coins(f.outputAsk())
-                                + " = §r" + coins(f.cost() + f.profit()) + " §6Profit §r" + coins(f.profit())
-                                + " §e(" + String.format("%.0f", f.profit() / f.cost() * 100) + "%)"));
+                        "§7" + f.leftCount() + "x " + shardName(f.left()) + " §r" + coins(f.leftBid())
+                                + " §7+ " + f.rightCount() + "x " + shardName(f.right()) + " §r" + coins(f.rightBid()),
+                        // whole-fusion totals: everything you sell (after tax) minus everything you buy
+                        "§aSell §r" + coins(f.cost() + f.profit()) + " §7- Cost §r" + coins(f.cost())
+                                + " §7= §6" + coins(f.profit()) + " §e(" + String.format("%.0f", f.profit() / f.cost() * 100) + "%)"));
             }
             int cap = Math.max(1, cfgInt("bazaarGuiTopItemsByPercentageCount") + cfgInt("bazaarGuiTopItemsByMoneyCount"));
             return out.size() > cap ? new ArrayList<>(out.subList(0, cap)) : out;
@@ -269,8 +281,8 @@ public class FlipHud {
                 }
                 g.text(font, title, x + 6, ry, textColor, true);
                 g.text(font, "§a§l" + perHour, x + WIDTH - 6 - perHourW, ry, textColor, true);
-                g.text(font, row.line2(), x + 6, ry + 11, textColor, true);
-                g.text(font, row.line3(), x + 6, ry + 22, textColor, true);
+                g.text(font, fit(font, row.line2(), WIDTH - 12), x + 6, ry + 11, textColor, true);
+                g.text(font, fit(font, row.line3(), WIDTH - 12), x + 6, ry + 22, textColor, true);
             }
             if (items.size() > visible) {
                 g.text(font, "§8scroll for more", x + 6, y + height - 11, textColor, true);
