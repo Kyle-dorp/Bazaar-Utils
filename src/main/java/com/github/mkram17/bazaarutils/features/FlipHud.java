@@ -152,8 +152,7 @@ public class FlipHud {
             FusionCalc.refreshIfStale();
             for (FusionCalc.Fusion f : FusionCalc.get()) {
                 out.add(new Row(f.outputCount() + "x " + ItemNames.of(f.output()) + " §d[" + f.type().toLowerCase() + "]", f.perHour(),
-                        "§7" + f.leftCount() + "x " + shardName(f.left()) + " §r" + coins(f.leftBid())
-                                + " §7+ " + f.rightCount() + "x " + shardName(f.right()) + " §r" + coins(f.rightBid()),
+                        "§7" + f.leftCount() + "x " + shardName(f.left()) + " + " + f.rightCount() + "x " + shardName(f.right()),
                         // whole-fusion totals: everything you sell (after tax) minus everything you buy
                         "§aSell §r" + coins(f.cost() + f.profit()) + " §7- Cost §r" + coins(f.cost())
                                 + " §7= §6" + coins(f.profit()) + " §e(" + String.format("%.0f", f.profit() / f.cost() * 100) + "%)"));
