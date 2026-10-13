@@ -135,6 +135,18 @@ public class FlipHud {
     /** BazaarFlip's flips (or dips) plus book crafting flips, in one list ranked by profit per hour. */
     private static List<Row> rows() {
         List<Row> out = new ArrayList<>();
+        if (BaseProfit.isFusionMode()) {
+            FusionCalc.refreshIfStale();
+            for (FusionCalc.Fusion f : FusionCalc.get()) {
+                out.add(new Row(f.outputCount() + "x " + ItemNames.of(f.output()) + " §d[" + f.type().toLowerCase() + "]", f.perHour(),
+                        "§7" + f.leftCount() + "x " + ItemNames.of(f.left()) + " §7@ §r" + coins(f.leftBid())
+                                + " §7+ " + f.rightCount() + "x " + ItemNames.of(f.right()) + " §7@ §r" + coins(f.rightBid()),
+                        "§6Profit: §r" + coins(f.profit()) + " §e(" + String.format("%.0f", f.profit() / f.cost() * 100) + "%) §7Cost: §r"
+                                + coins(f.cost()) + " §7| §aSell: §r" + coins(f.outputAsk())));
+            }
+            int cap = Math.max(1, cfgInt("bazaarGuiTopItemsByPercentageCount") + cfgInt("bazaarGuiTopItemsByMoneyCount"));
+            return out.size() > cap ? new ArrayList<>(out.subList(0, cap)) : out;
+        }
         boolean dips = BaseProfit.isDipMode();
         for (Object it : items()) {
             String id = id(it);
@@ -220,7 +232,12 @@ public class FlipHud {
         g.fill(x + WIDTH - 1, y, x + WIDTH, y + height, border);
         g.fill(x, y + TITLE_H, x + WIDTH, y + TITLE_H + 1, 0x30FFFFFF);
 
-        g.text(font, BaseProfit.isDipMode() ? "§l§bBazaar Dips (Profit/hr)" : "§l§eBazaar Flips (Profit/hr)", x + 6, y + 7, textColor, true);
+        String heading = switch (BaseProfit.getListMode()) {
+            case 1 -> "§l§bBazaar Dips (Profit/hr)";
+            case 2 -> "§l§dShard Fusions (Profit/hr)";
+            default -> "§l§eBazaar Flips (Profit/hr)";
+        };
+        g.text(font, heading, x + 6, y + 7, textColor, true);
         if (!items.isEmpty()) {
             String range = (scroll + 1) + "-" + (scroll + visible) + " / " + items.size();
             g.text(font, "§7" + range, x + WIDTH - 6 - font.width(range), y + 7, textColor, true);
@@ -268,17 +285,26 @@ public class FlipHud {
 
     // ---- flips / dips mode toggle ----
 
-    private static final KeyMapping modeKey = new KeyMapping("Toggle Flips / Dips list", InputConstants.Type.KEYSYM,
+    private static final KeyMapping modeKey = new KeyMapping("Cycle list: Flips / Dips / Fusions", InputConstants.Type.KEYSYM,
             GLFW.GLFW_KEY_Y, com.github.mkram17.bazaarutils.features.keybinds.ItemSearchHelper.CATEGORY);
 
-    /** Switches the list between stable flips and dips, and refreshes it right away instead of waiting for the next poll. */
-    public static void toggleMode(Boolean forceDips) {
-        boolean dips = forceDips != null ? forceDips : !BaseProfit.isDipMode();
-        BaseProfit.setDipMode(dips);
+    private static final String[] MODE_NAMES = {"FLIPS (stable spreads)", "DIPS (cheap vs 7-day normal)", "FUSIONS (attribute shards)"};
+
+    /**
+     * Switches the list mode (null = next in the cycle Flips -> Dips -> Fusions) and refreshes it right away instead of
+     * waiting for the next poll.
+     */
+    public static void toggleMode(Integer forceMode) {
+        int mode = forceMode != null ? forceMode : (BaseProfit.getListMode() + 1) % 3;
+        BaseProfit.setListMode(mode);
         scroll = 0;
-        PlayerActionUtil.notifyAll("List mode: " + (dips ? "DIPS (cheap vs 7-day normal)" : "FLIPS (stable spreads)"));
+        PlayerActionUtil.notifyAll("List mode: " + MODE_NAMES[mode]);
         Thread t = new Thread(() -> {
             try {
+                if (mode == 2) {
+                    FusionCalc.refreshIfStale();
+                    return;
+                }
                 Class<?> mod = Class.forName(MOD);
                 mod.getMethod("performBazaarCheck").invoke(null);
                 Thread.sleep(8000); // dip mode needs the 7-day history, which loads in the background on the first pass
@@ -304,7 +330,8 @@ public class FlipHud {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, buildContext) ->
                 dispatcher.register(ClientCommands.literal("flipmode")
                         .executes(ctx -> { toggleMode(null); return 1; })
-                        .then(ClientCommands.literal("flips").executes(ctx -> { toggleMode(false); return 1; }))
-                        .then(ClientCommands.literal("dips").executes(ctx -> { toggleMode(true); return 1; }))));
+                        .then(ClientCommands.literal("flips").executes(ctx -> { toggleMode(0); return 1; }))
+                        .then(ClientCommands.literal("dips").executes(ctx -> { toggleMode(1); return 1; }))
+                        .then(ClientCommands.literal("fusions").executes(ctx -> { toggleMode(2); return 1; }))));
     }
 }

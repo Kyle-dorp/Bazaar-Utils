@@ -40,6 +40,7 @@ public class BaseProfit {
             o.addProperty("maxVsWeekAveragePercent", avgTolerance);
             o.addProperty("visibleRows", visibleRows);
             o.addProperty("dipMode", dipMode);
+            o.addProperty("fusionMode", fusionMode);
             o.addProperty("minDipPercent", minDipPercent);
             Files.writeString(FILE, new Gson().toJson(o));
         } catch (Exception ignored) { }
@@ -68,6 +69,8 @@ public class BaseProfit {
         return fallback;
     }
 
+    private static volatile boolean fusionMode = loadBool("fusionMode", false);
+
     /** Dip mode: list items whose buy price is far below its 7-day normal while the sell price is still normal. */
     public static boolean isDipMode() {
         return dipMode;
@@ -75,6 +78,23 @@ public class BaseProfit {
 
     public static void setDipMode(boolean value) {
         dipMode = value;
+        if (value) fusionMode = false;
+        save();
+    }
+
+    /** Fusion mode: the list shows attribute shard fusions instead of Bazaar flips. */
+    public static boolean isFusionMode() {
+        return fusionMode;
+    }
+
+    /** 0 = flips, 1 = dips, 2 = fusions. */
+    public static int getListMode() {
+        return fusionMode ? 2 : dipMode ? 1 : 0;
+    }
+
+    public static void setListMode(int mode) {
+        dipMode = mode == 1;
+        fusionMode = mode == 2;
         save();
     }
 

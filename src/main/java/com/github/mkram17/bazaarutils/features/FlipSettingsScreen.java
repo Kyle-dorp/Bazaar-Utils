@@ -23,7 +23,9 @@ public class FlipSettingsScreen extends Screen {
     private final Screen parent;
     private final List<Runnable> savers = new ArrayList<>();
     private int scaleIndex;
-    private boolean listOn, dipOn;
+    private boolean listOn;
+    private int listMode;
+    private static final String[] MODE_LABELS = {"List: FLIPS (stable spreads)", "List: DIPS (cheap vs normal)", "List: FUSIONS (shards)"};
     private Button scaleButton, listButton;
 
     /** BazaarFlip opens its config screen with a no-arg constructor, so this is what the patch calls. */
@@ -174,10 +176,10 @@ public class FlipSettingsScreen extends Screen {
         numberInt(right, top + 4 * ROW_H, "X", "guiX", Integer.MIN_VALUE);
         numberInt(right, top + 5 * ROW_H, "Y", "guiY", Integer.MIN_VALUE);
 
-        dipOn = BaseProfit.isDipMode();
-        addRenderableWidget(Button.builder(Component.literal(dipOn ? "List: DIPS (cheap vs normal)" : "List: FLIPS (stable spreads)"), b -> {
-            dipOn = !dipOn;
-            b.setMessage(Component.literal(dipOn ? "List: DIPS (cheap vs normal)" : "List: FLIPS (stable spreads)"));
+        listMode = BaseProfit.getListMode();
+        addRenderableWidget(Button.builder(Component.literal(MODE_LABELS[listMode]), b -> {
+            listMode = (listMode + 1) % 3;
+            b.setMessage(Component.literal(MODE_LABELS[listMode]));
         }).bounds(right, top + 6 * ROW_H - 4, COL_W, 20).build());
 
         addRenderableWidget(Button.builder(Component.literal("Save and close"), b -> onClose())
@@ -189,7 +191,7 @@ public class FlipSettingsScreen extends Screen {
         for (Runnable r : savers) r.run();
         setInt("guiScale", scaleIndex);
         setBool("enableMonitoring", listOn);
-        BaseProfit.setDipMode(dipOn);
+        BaseProfit.setListMode(listMode);
         saveConfig();
         VersionCompat.setScreen(Minecraft.getInstance(), parent);
     }
