@@ -139,10 +139,12 @@ public class FlipHud {
             FusionCalc.refreshIfStale();
             for (FusionCalc.Fusion f : FusionCalc.get()) {
                 out.add(new Row(f.outputCount() + "x " + ItemNames.of(f.output()) + " §d[" + f.type().toLowerCase() + "]", f.perHour(),
-                        "§7" + f.leftCount() + "x " + ItemNames.of(f.left()) + " §7@ §r" + coins(f.leftBid())
-                                + " §7+ " + f.rightCount() + "x " + ItemNames.of(f.right()) + " §7@ §r" + coins(f.rightBid()),
-                        "§6Profit: §r" + coins(f.profit()) + " §e(" + String.format("%.0f", f.profit() / f.cost() * 100) + "%) §7Cost: §r"
-                                + coins(f.cost()) + " §7| §aSell: §r" + coins(f.outputAsk())));
+                        "§7Buy " + f.leftCount() + "x " + ItemNames.of(f.left()) + " @ §r" + coins(f.leftBid())
+                                + " §7+ " + f.rightCount() + "x " + ItemNames.of(f.right()) + " @ §r" + coins(f.rightBid()),
+                        // every number for the whole fusion: cost of all inputs, all output shards sold after tax, profit
+                        "§7Cost §r" + coins(f.cost()) + " §7-> §aSell " + f.outputCount() + "x" + coins(f.outputAsk())
+                                + " = §r" + coins(f.cost() + f.profit()) + " §6Profit §r" + coins(f.profit())
+                                + " §e(" + String.format("%.0f", f.profit() / f.cost() * 100) + "%)"));
             }
             int cap = Math.max(1, cfgInt("bazaarGuiTopItemsByPercentageCount") + cfgInt("bazaarGuiTopItemsByMoneyCount"));
             return out.size() > cap ? new ArrayList<>(out.subList(0, cap)) : out;
