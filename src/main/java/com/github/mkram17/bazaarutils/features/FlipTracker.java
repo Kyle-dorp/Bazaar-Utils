@@ -10,6 +10,7 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.client.Minecraft;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -33,12 +34,21 @@ public class FlipTracker {
     private static final Pattern INSTA_SELL = Pattern.compile("^\\[Bazaar\\] Sold ([\\d,]+)x (.+) for ([\\d,.]+) coins!");
     private static final Pattern INSTA_BUY = Pattern.compile("^\\[Bazaar\\] Bought ([\\d,]+)x (.+) for ([\\d,.]+) coins!");
 
+    // "FUSION! You obtained Troglobyte Shard x2!" / "FUSION! You obtained a Stoneworm Shard!" (from your chat logs)
+    private static final Pattern FUSION = Pattern.compile("^FUSION! You obtained (?:an? )?(.+? Shard)(?: x([\\d,]+))?!");
+
     private static class Entry {
         long time;
         String item;
         boolean buy;
         double qty;
         double coins; // total paid (buy) or total received after tax (sell)
+        // a fusion: `item` x `qty` came out of the Fusion Machine, made from these inputs (null if they couldn't be matched)
+        boolean fusion;
+        String in1;
+        double in1Qty;
+        String in2;
+        double in2Qty;
     }
 
     private static final List<Entry> entries = load();
@@ -87,23 +97,101 @@ public class FlipTracker {
             record(m.group(2), false, num(m.group(1)), num(m.group(3)));
         } else if ((m = INSTA_BUY.matcher(msg)).find()) {
             record(m.group(2), true, num(m.group(1)), num(m.group(3)));
+        } else if ((m = FUSION.matcher(msg)).find()) {
+            onFusion(m.group(1).trim(), m.group(2) == null ? 1 : num(m.group(2)));
         }
+    }
+
+    /**
+     * The fusion message names only the output, so the inputs are worked out: of the wiki recipes that make this shard (in
+     * this amount, or double for a Pure Reptile proc), keep the ones whose inputs you're holding according to your tracked
+     * Bazaar buys, and pick the one whose inputs you bought most recently. Those inputs are then used up at their average
+     * cost and become the cost of the output. If nothing matches, the output has no known cost and its sale isn't counted.
+     */
+    private static void onFusion(String output, double qty) {
+        Replay held = replay();
+        FusionCalc.NamedRecipe best = null;
+        long bestTime = -1;
+        for (FusionCalc.NamedRecipe r : FusionCalc.recipesMaking(output)) {
+            if (qty != r.outputCount() && qty != 2.0 * r.outputCount()) continue;
+            boolean same = r.left().equalsIgnoreCase(r.right());
+            double needLeft = same ? r.leftCount() + r.rightCount() : r.leftCount();
+            if (held.qty(r.left()) < needLeft || (!same && held.qty(r.right()) < r.rightCount())) continue;
+            long t = Math.max(held.lastBuy(r.left()), held.lastBuy(r.right()));
+            if (t > bestTime) {
+                bestTime = t;
+                best = r;
+            }
+        }
+        Entry e = new Entry();
+        e.time = System.currentTimeMillis();
+        e.item = output;
+        e.qty = qty;
+        e.fusion = true;
+        if (best != null) {
+            e.in1 = best.left();
+            e.in1Qty = best.leftCount();
+            e.in2 = best.right();
+            e.in2Qty = best.rightCount();
+        }
+        entries.add(e);
+        save();
     }
 
     private record Realized(long time, String item, double profit) { }
 
-    /** Replays every entry in order; each sale becomes one realized profit against that item's running average cost. */
+    private record Replay(Map<String, double[]> stock, Map<String, Long> lastBuys, List<Realized> realized) {
+        double qty(String item) {
+            double[] s = stock.get(item);
+            return s == null ? 0 : s[0];
+        }
+
+        long lastBuy(String item) {
+            return lastBuys.getOrDefault(item, 0L);
+        }
+    }
+
     private static List<Realized> realized() {
+        return replay().realized();
+    }
+
+    /** Replays every entry in order; each sale becomes one realized profit against that item's running average cost. */
+    private static Replay replay() {
         List<Entry> copy;
         synchronized (entries) {
             copy = new ArrayList<>(entries);
         }
         copy.sort(Comparator.comparingLong(e -> e.time));
         Map<String, double[]> stock = new HashMap<>(); // item -> {qty held, total cost}
+        Map<String, Long> lastBuys = new HashMap<>();
         List<Realized> out = new ArrayList<>();
         for (Entry e : copy) {
             double[] s = stock.computeIfAbsent(e.item, k -> new double[2]);
+            if (e.fusion) {
+                if (e.in1 == null) continue; // inputs unknown: the output has no cost basis
+                double cost = 0;
+                boolean covered = true;
+                for (int i = 0; i < 2; i++) {
+                    String in = i == 0 ? e.in1 : e.in2;
+                    double need = i == 0 ? e.in1Qty : e.in2Qty;
+                    double[] si = stock.computeIfAbsent(in, k -> new double[2]);
+                    if (si[0] < need) {
+                        covered = false;
+                        break;
+                    }
+                    double basis = si[1] / si[0] * need;
+                    si[0] -= need;
+                    si[1] -= basis;
+                    cost += basis;
+                }
+                if (covered) {
+                    s[0] += e.qty;
+                    s[1] += cost;
+                }
+                continue;
+            }
             if (e.buy) {
+                lastBuys.put(e.item, e.time);
                 s[0] += e.qty;
                 s[1] += e.coins;
             } else if (s[0] > 0) {
@@ -117,7 +205,7 @@ public class FlipTracker {
             }
             // selling items with no recorded purchase has no cost basis, so it isn't counted
         }
-        return out;
+        return new Replay(stock, lastBuys, out);
     }
 
     private static String coins(double v) {
@@ -139,26 +227,41 @@ public class FlipTracker {
                 count++;
             }
         }
-        return label + ": " + coins(total) + " coins (" + count + " sales)";
+        return label + ": " + (total >= 0 ? "§a" : "§c") + coins(total) + " §7(" + count + " sales)";
     }
 
-    private static int show() {
+    private static volatile List<String> cachedLines = List.of();
+    private static volatile long cachedAt;
+
+    /** The profit summary shown beside the flip settings screen, recomputed at most once a second. */
+    public static List<String> summaryLines() {
+        long now = System.currentTimeMillis();
+        if (now - cachedAt < 1000) return cachedLines;
         List<Realized> list = realized();
         long today = LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();
-        PlayerActionUtil.notifyAll("Bazaar profit (after tax, average cost)");
-        PlayerActionUtil.notifyAll(line("Session", list, SESSION_START));
-        PlayerActionUtil.notifyAll(line("Today", list, today));
-        PlayerActionUtil.notifyAll(line("All time", list, 0));
-
+        List<String> lines = new ArrayList<>();
+        lines.add("§e§lProfit §7(after tax)");
+        lines.add("§7" + line("Session", list, SESSION_START));
+        lines.add("§7" + line("Today", list, today));
+        lines.add("§7" + line("All time", list, 0));
+        lines.add("");
+        lines.add("§e§lTop items");
         Map<String, Double> byItem = new HashMap<>();
         for (Realized r : list) byItem.merge(r.item, r.profit, Double::sum);
         byItem.entrySet().stream()
                 .sorted((a, b) -> Double.compare(b.getValue(), a.getValue()))
-                .limit(5)
-                .forEach(e -> PlayerActionUtil.notifyAll("  " + e.getKey() + ": " + coins(e.getValue())));
-        if (list.isEmpty()) {
-            PlayerActionUtil.notifyAll("No completed flips yet. Buy and sell on the Bazaar and they will show up here.");
-        }
+                .limit(8)
+                .forEach(e -> lines.add((e.getValue() >= 0 ? "§a" : "§c") + coins(e.getValue()) + " §7" + e.getKey()));
+        if (list.isEmpty()) lines.add("§7No completed flips yet.");
+        cachedLines = lines;
+        cachedAt = now;
+        return lines;
+    }
+
+    /** Opens the flip settings screen, which shows the profit summary on the side (kept out of chat). */
+    private static int show() {
+        Minecraft mc = Minecraft.getInstance();
+        mc.schedule(() -> com.github.mkram17.bazaarutils.utils.VersionCompat.setScreen(mc, new FlipSettingsScreen()));
         return 1;
     }
 

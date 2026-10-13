@@ -55,6 +55,21 @@ public class FusionCalc {
         }
     }
 
+    /** A recipe as display names, for matching against what the flip tracker saw you buy. */
+    public record NamedRecipe(String left, int leftCount, String right, int rightCount, String output, int outputCount) { }
+
+    /** Every wiki recipe that makes the shard with this display name (e.g. "Hideoncave Shard"). */
+    public static List<NamedRecipe> recipesMaking(String outputName) {
+        loadRecipes();
+        List<NamedRecipe> out = new ArrayList<>();
+        for (int[] r : recipes) {
+            if (ItemNames.of(ids[r[5]]).equalsIgnoreCase(outputName)) {
+                out.add(new NamedRecipe(ItemNames.of(ids[r[1]]), r[2], ItemNames.of(ids[r[3]]), r[4], ItemNames.of(ids[r[5]]), r[6]));
+            }
+        }
+        return out;
+    }
+
     public static List<Fusion> get() {
         return fusions;
     }

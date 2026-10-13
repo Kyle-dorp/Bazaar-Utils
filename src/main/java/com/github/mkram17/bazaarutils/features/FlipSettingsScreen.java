@@ -207,5 +207,26 @@ public class FlipSettingsScreen extends Screen {
             g.text(font, labels.get(i)[0], labelPos.get(i)[0], labelPos.get(i)[1],
                     header ? 0xFF55FFFF : 0xFFBBBBBB, true);
         }
+        drawProfitPanel(g, left, right);
+    }
+
+    /** The flip tracker's profit summary in a panel beside the settings (right side if there's room, else left). */
+    private void drawProfitPanel(GuiGraphicsExtractor g, int settingsLeft, int settingsRight) {
+        int w = 148;
+        int px = settingsRight + 6;
+        if (px + w > width - 4 && settingsLeft - 6 - w >= 4) px = settingsLeft - 6 - w;
+        List<String> lines = FlipTracker.summaryLines();
+        int h = 12 + lines.size() * 11;
+        g.fill(px, 8, px + w, 8 + h, 0xC0101018);
+        int y = 14;
+        for (String line : lines) {
+            String text = line;
+            if (font.width(text) > w - 10) {
+                while (text.length() > 4 && font.width(text + "..") > w - 10) text = text.substring(0, text.length() - 1);
+                text += "..";
+            }
+            g.text(font, text, px + 5, y, 0xFFFFFFFF, true);
+            y += 11;
+        }
     }
 }
