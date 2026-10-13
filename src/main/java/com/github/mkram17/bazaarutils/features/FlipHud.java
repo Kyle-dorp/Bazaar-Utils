@@ -133,9 +133,9 @@ public class FlipHud {
     private record Row(String title, double perHour, String line2, String line3) { }
 
     /** BazaarFlip's flips (or dips) plus book crafting flips, in one list ranked by profit per hour. */
-    private static List<Row> rows() {
+    private static List<Row> rows(int mode) {
         List<Row> out = new ArrayList<>();
-        if (BaseProfit.isFusionMode()) {
+        if (mode == 2) {
             FusionCalc.refreshIfStale();
             for (FusionCalc.Fusion f : FusionCalc.get()) {
                 out.add(new Row(f.outputCount() + "x " + ItemNames.of(f.output()) + " §d[" + f.type().toLowerCase() + "]", f.perHour(),
@@ -149,7 +149,7 @@ public class FlipHud {
             int cap = Math.max(1, cfgInt("bazaarGuiTopItemsByPercentageCount") + cfgInt("bazaarGuiTopItemsByMoneyCount"));
             return out.size() > cap ? new ArrayList<>(out.subList(0, cap)) : out;
         }
-        boolean dips = BaseProfit.isDipMode();
+        boolean dips = mode == 1;
         for (Object it : items()) {
             String id = id(it);
             String third = "§6Profit: §r" + coins(d(it, "profit")) + " §e(" + String.format("%.1f", d(it, "profitMargin")) + "%)"
@@ -180,12 +180,17 @@ public class FlipHud {
     // ---- rendering (called from the patched HudRenderer.renderOverlay) ----
 
     public static void render(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+        render(g, mouseX, mouseY, BaseProfit.getListMode());
+    }
+
+    /** Draws the list in a given mode (0 flips, 1 dips, 2 fusions), regardless of the saved mode. */
+    public static void render(GuiGraphicsExtractor g, int mouseX, int mouseY, int mode) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
         Font font = mc.font;
         float s = scale();
 
-        List<Row> items = rows();
+        List<Row> items = rows(mode);
         int visible = Math.max(1, Math.min(BaseProfit.getVisibleRows(), Math.max(1, items.size())));
         int maxScroll = Math.max(0, items.size() - visible);
         scroll = Math.max(0, Math.min(scroll, maxScroll));
@@ -234,7 +239,7 @@ public class FlipHud {
         g.fill(x + WIDTH - 1, y, x + WIDTH, y + height, border);
         g.fill(x, y + TITLE_H, x + WIDTH, y + TITLE_H + 1, 0x30FFFFFF);
 
-        String heading = switch (BaseProfit.getListMode()) {
+        String heading = switch (mode) {
             case 1 -> "§l§bBazaar Dips (Profit/hr)";
             case 2 -> "§l§dShard Fusions (Profit/hr)";
             default -> "§l§eBazaar Flips (Profit/hr)";
@@ -272,6 +277,16 @@ public class FlipHud {
             }
         }
         g.pose().popMatrix();
+    }
+
+    @RunOnInit
+    public static void registerFusionBox() {
+        // the Fusion Box menu (Fusion Machine in Galatea, or the Hunting Box fuse button) shows the fusion list too
+        ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
+            if (!(screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)) return;
+            if (!screen.getTitle().getString().replaceAll("§.", "").contains("Fusion")) return;
+            ScreenEvents.afterExtract(screen).register((s, g, mouseX, mouseY, delta) -> render(g, mouseX, mouseY, 2));
+        });
     }
 
     @RunOnInit
