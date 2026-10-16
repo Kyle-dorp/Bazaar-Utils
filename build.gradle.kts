@@ -109,6 +109,11 @@ dependencies {
     include("org.danilopianini:gson-extras:3.3.0")
     // Skyblocker for compatibility
     compileOnly("maven.modrinth:skyblocker-liap:v${deps["skyblocker_version"]}")
+
+    // Unit tests for the pure calculators (no game needed)
+    testImplementation(platform("org.junit:junit-bom:5.11.4"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 val buildtimeInjectionTask = tasks.register<com.github.mkram17.bazaarutils.build.BuildtimeInjectionTask>("processInitAnnotations") {
@@ -139,6 +144,10 @@ tasks {
                 "major_update_notes" to rootProject.property("major_update_notes")
             ))
         }
+    }
+
+    test {
+        useJUnitPlatform()
     }
 
     jar {

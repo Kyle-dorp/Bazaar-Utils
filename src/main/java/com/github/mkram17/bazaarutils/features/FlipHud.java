@@ -110,7 +110,7 @@ public class FlipHud {
 
     // ---- formatting ----
 
-    private static String coins(double v) {
+    static String coins(double v) {
         double a = Math.abs(v);
         String s;
         if (a >= 1_000_000_000) s = String.format("%.2fB", a / 1_000_000_000);
@@ -148,6 +148,20 @@ public class FlipHud {
     /** BazaarFlip's flips (or dips) plus book crafting flips, in one list ranked by profit per hour. */
     private static List<Row> rows(int mode) {
         List<Row> out = new ArrayList<>();
+        if (mode == 3) {
+            ForgeCalc.refreshIfStale();
+            int slots = BaseProfit.getForgeSlots();
+            for (ForgeCalc.Row f : ForgeCalc.get()) {
+                ForgePlanner.Route r = f.route();
+                out.add(new Row(ForgeCalc.name(r.id()) + (f.soldOnAh() ? " §6[forge, AH]" : " §6[forge]"), f.perHour(),
+                        "§7" + r.forgeSteps() + (r.forgeSteps() == 1 ? " forge, §r" : " forges, §r") + ForgeCalc.duration(r.slotSeconds())
+                                + "§7 slot time, done in ~§r" + ForgeCalc.duration(r.hoursWith(slots) * 3600) + "§7 (" + slots + " slots)",
+                        "§aSell §r" + coins(r.revenue()) + " §7- Cost §r" + coins(r.cost()) + " §7= §6" + coins(r.profit())
+                                + " §e" + coins(f.perDay()) + "/day"));
+            }
+            int cap = Math.max(1, cfgInt("bazaarGuiTopItemsByPercentageCount") + cfgInt("bazaarGuiTopItemsByMoneyCount"));
+            return out.size() > cap ? new ArrayList<>(out.subList(0, cap)) : out;
+        }
         if (mode == 2) {
             FusionCalc.refreshIfStale();
             for (FusionCalc.Fusion f : FusionCalc.get()) {
@@ -194,7 +208,7 @@ public class FlipHud {
         render(g, mouseX, mouseY, BaseProfit.getListMode());
     }
 
-    /** Draws the list in a given mode (0 flips, 1 dips, 2 fusions), regardless of the saved mode. */
+    /** Draws the list in a given mode (0 flips, 1 dips, 2 fusions, 3 forge), regardless of the saved mode. */
     public static void render(GuiGraphicsExtractor g, int mouseX, int mouseY, int mode) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
@@ -253,6 +267,7 @@ public class FlipHud {
         String heading = switch (mode) {
             case 1 -> "§l§bBazaar Dips (Profit/hr)";
             case 2 -> "§l§dShard Fusions (Profit/hr)";
+            case 3 -> "§l§6Forge Flips (Profit/hr)";
             default -> "§l§eBazaar Flips (Profit/hr)";
         };
         g.text(font, heading, x + 6, y + 7, textColor, true);
@@ -301,6 +316,16 @@ public class FlipHud {
     }
 
     @RunOnInit
+    public static void registerForgeMenu() {
+        // the Dwarven Forge menu ("The Forge") shows the forge flip list while you pick what to start
+        ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
+            if (!(screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)) return;
+            if (!screen.getTitle().getString().replaceAll("§.", "").contains("The Forge")) return;
+            ScreenEvents.afterExtract(screen).register((s, g, mouseX, mouseY, delta) -> render(g, mouseX, mouseY, 3));
+        });
+    }
+
+    @RunOnInit
     public static void registerScroll() {
         ScreenEvents.AFTER_INIT.register((client, screen, w, h) ->
                 ScreenMouseEvents.allowMouseScroll(screen).register((s, mouseX, mouseY, horizontal, vertical) -> {
@@ -313,17 +338,18 @@ public class FlipHud {
 
     // ---- flips / dips mode toggle ----
 
-    private static final KeyMapping modeKey = new KeyMapping("Cycle list: Flips / Dips / Fusions", InputConstants.Type.KEYSYM,
+    private static final KeyMapping modeKey = new KeyMapping("Cycle list: Flips / Dips / Fusions / Forge", InputConstants.Type.KEYSYM,
             GLFW.GLFW_KEY_Y, com.github.mkram17.bazaarutils.features.keybinds.ItemSearchHelper.CATEGORY);
 
-    private static final String[] MODE_NAMES = {"FLIPS (stable spreads)", "DIPS (cheap vs 7-day normal)", "FUSIONS (attribute shards)"};
+    private static final String[] MODE_NAMES = {"FLIPS (stable spreads)", "DIPS (cheap vs 7-day normal)", "FUSIONS (attribute shards)",
+            "FORGE (cheapest route per slot-hour)"};
 
     /**
-     * Switches the list mode (null = next in the cycle Flips -> Dips -> Fusions) and refreshes it right away instead of
+     * Switches the list mode (null = next in the cycle Flips -> Dips -> Fusions -> Forge) and refreshes it right away instead of
      * waiting for the next poll.
      */
     public static void toggleMode(Integer forceMode) {
-        int mode = forceMode != null ? forceMode : (BaseProfit.getListMode() + 1) % 3;
+        int mode = forceMode != null ? forceMode : (BaseProfit.getListMode() + 1) % MODE_NAMES.length;
         BaseProfit.setListMode(mode);
         scroll = 0;
         PlayerActionUtil.notifyAll("List mode: " + MODE_NAMES[mode]);
@@ -331,6 +357,10 @@ public class FlipHud {
             try {
                 if (mode == 2) {
                     FusionCalc.refreshIfStale();
+                    return;
+                }
+                if (mode == 3) {
+                    ForgeCalc.refreshIfStale();
                     return;
                 }
                 Class<?> mod = Class.forName(MOD);
@@ -360,6 +390,7 @@ public class FlipHud {
                         .executes(ctx -> { toggleMode(null); return 1; })
                         .then(ClientCommands.literal("flips").executes(ctx -> { toggleMode(0); return 1; }))
                         .then(ClientCommands.literal("dips").executes(ctx -> { toggleMode(1); return 1; }))
-                        .then(ClientCommands.literal("fusions").executes(ctx -> { toggleMode(2); return 1; }))));
+                        .then(ClientCommands.literal("fusions").executes(ctx -> { toggleMode(2); return 1; }))
+                        .then(ClientCommands.literal("forge").executes(ctx -> { toggleMode(3); return 1; }))));
     }
 }

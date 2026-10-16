@@ -25,7 +25,8 @@ public class FlipSettingsScreen extends Screen {
     private int scaleIndex;
     private boolean listOn;
     private int listMode;
-    private static final String[] MODE_LABELS = {"List: FLIPS (stable spreads)", "List: DIPS (cheap vs normal)", "List: FUSIONS (shards)"};
+    private static final String[] MODE_LABELS = {"List: FLIPS (stable spreads)", "List: DIPS (cheap vs normal)", "List: FUSIONS (shards)",
+            "List: FORGE (full routes)"};
     private Button scaleButton, listButton;
 
     /** BazaarFlip opens its config screen with a no-arg constructor, so this is what the patch calls. */
@@ -178,12 +179,20 @@ public class FlipSettingsScreen extends Screen {
 
         listMode = BaseProfit.getListMode();
         addRenderableWidget(Button.builder(Component.literal(MODE_LABELS[listMode]), b -> {
-            listMode = (listMode + 1) % 3;
+            listMode = (listMode + 1) % MODE_LABELS.length;
             b.setMessage(Component.literal(MODE_LABELS[listMode]));
         }).bounds(right, top + 6 * ROW_H - 4, COL_W, 20).build());
 
+        // forge list: how many slots run a route at once, and the Quick Forge perk's time saving
+        label(left, top + 7 * ROW_H - 10, "Forge slots (1-7)");
+        numberDouble(left, top + 7 * ROW_H, "Forge slots", BaseProfit.getForgeSlots(), v -> BaseProfit.setForgeSlots((int) v));
+        label(right, top + 7 * ROW_H - 10, "Quick Forge (%, 0-30)");
+        numberDouble(right, top + 7 * ROW_H, "Quick Forge", BaseProfit.getQuickForgePercent(), BaseProfit::setQuickForgePercent);
+        label(left, top + 8 * ROW_H - 10, "Check forges every (hours)");
+        numberDouble(left, top + 8 * ROW_H, "Check every", BaseProfit.getForgeCheckHours(), BaseProfit::setForgeCheckHours);
+
         addRenderableWidget(Button.builder(Component.literal("Save and close"), b -> onClose())
-                .bounds(width / 2 - 70, top + 7 * ROW_H + 2, 140, 20).build());
+                .bounds(width / 2 - 70, top + 9 * ROW_H + 2, 140, 20).build());
     }
 
     @Override

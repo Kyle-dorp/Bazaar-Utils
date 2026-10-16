@@ -42,6 +42,10 @@ public class BaseProfit {
             o.addProperty("dipMode", dipMode);
             o.addProperty("fusionMode", fusionMode);
             o.addProperty("minDipPercent", minDipPercent);
+            o.addProperty("forgeMode", forgeMode);
+            o.addProperty("forgeSlots", forgeSlots);
+            o.addProperty("quickForgePercent", quickForgePercent);
+            o.addProperty("forgeCheckHours", forgeCheckHours);
             Files.writeString(FILE, new Gson().toJson(o));
         } catch (Exception ignored) { }
     }
@@ -70,6 +74,55 @@ public class BaseProfit {
     }
 
     private static volatile boolean fusionMode = loadBool("fusionMode", false);
+    private static volatile boolean forgeMode = loadBool("forgeMode", false);
+    private static volatile int forgeSlots = clampSlots((int) loadDouble("forgeSlots", 7));
+    private static volatile double quickForgePercent = clampQuickForge(loadDouble("quickForgePercent", 0));
+    private static volatile double forgeCheckHours = clampCheckHours(loadDouble("forgeCheckHours", 2));
+
+    private static double clampCheckHours(double value) {
+        return Math.max(0, Math.min(48, value));
+    }
+
+    /**
+     * How often you come back to collect and restart forges, in hours (0-48). A forge holds its slot until collected, so
+     * this keeps 30-second forges from looking like they run 120 times an hour while you're logged off.
+     */
+    public static double getForgeCheckHours() {
+        return forgeCheckHours;
+    }
+
+    public static void setForgeCheckHours(double value) {
+        forgeCheckHours = clampCheckHours(value);
+        save();
+    }
+
+    private static int clampSlots(int value) {
+        return Math.max(1, Math.min(7, value));
+    }
+
+    private static double clampQuickForge(double value) {
+        return Math.max(0, Math.min(30, value));
+    }
+
+    /** Forge slots unlocked (HOTM), 1-7: the forge list's profit per hour runs the route in every slot. */
+    public static int getForgeSlots() {
+        return forgeSlots;
+    }
+
+    public static void setForgeSlots(int value) {
+        forgeSlots = clampSlots(value);
+        save();
+    }
+
+    /** Quick Forge perk, 0-30%: every forge takes this much less time. */
+    public static double getQuickForgePercent() {
+        return quickForgePercent;
+    }
+
+    public static void setQuickForgePercent(double value) {
+        quickForgePercent = clampQuickForge(value);
+        save();
+    }
 
     /** Dip mode: list items whose buy price is far below its 7-day normal while the sell price is still normal. */
     public static boolean isDipMode() {
@@ -78,7 +131,10 @@ public class BaseProfit {
 
     public static void setDipMode(boolean value) {
         dipMode = value;
-        if (value) fusionMode = false;
+        if (value) {
+            fusionMode = false;
+            forgeMode = false;
+        }
         save();
     }
 
@@ -87,14 +143,15 @@ public class BaseProfit {
         return fusionMode;
     }
 
-    /** 0 = flips, 1 = dips, 2 = fusions. */
+    /** 0 = flips, 1 = dips, 2 = fusions, 3 = forge. */
     public static int getListMode() {
-        return fusionMode ? 2 : dipMode ? 1 : 0;
+        return forgeMode ? 3 : fusionMode ? 2 : dipMode ? 1 : 0;
     }
 
     public static void setListMode(int mode) {
         dipMode = mode == 1;
         fusionMode = mode == 2;
+        forgeMode = mode == 3;
         save();
     }
 
