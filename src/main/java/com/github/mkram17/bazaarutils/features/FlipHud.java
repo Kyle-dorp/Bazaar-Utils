@@ -155,7 +155,8 @@ public class FlipHud {
                 ForgePlanner.Route r = f.route();
                 out.add(new Row(ForgeCalc.name(r.id()) + (f.soldOnAh() ? " §6[forge, AH]" : " §6[forge]"), f.perHour(),
                         "§7" + r.forgeSteps() + (r.forgeSteps() == 1 ? " forge, §r" : " forges, §r") + ForgeCalc.duration(r.slotSeconds())
-                                + "§7 slot time, done in ~§r" + ForgeCalc.duration(r.hoursWith(slots) * 3600) + "§7 (" + slots + " slots)",
+                                + "§7 slot time, done in ~§r" + ForgeCalc.duration(r.hoursWith(slots) * 3600)
+                                + "§7, limit: §r" + ForgeCalc.limitText(f, slots, false),
                         "§aSell §r" + coins(r.revenue()) + " §7- Cost §r" + coins(r.cost()) + " §7= §6" + coins(r.profit())
                                 + " §e" + coins(f.perDay()) + "/day"));
             }

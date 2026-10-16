@@ -108,12 +108,64 @@ public final class ForgePlanner {
         return bestRoute;
     }
 
+    /**
+     * How many times an hour a route can really run and what stops it running more: {@link #SLOTS} (your forge slots),
+     * {@link #MARKET} (how many the market buys) or the id of a bought part you can't get faster. {@code limitPerHour} is
+     * that limit's units per hour (NaN for slots).
+     */
+    public record Throughput(double runsPerHour, double profitPerHour, String limit, double limitPerHour) {
+        public static final String SLOTS = "slots", MARKET = "market";
+
+        /** The bought part whose supply caps the route, or null if slots or the market do. */
+        public String limitingInput() {
+            return SLOTS.equals(limit) || MARKET.equals(limit) ? null : limit;
+        }
+    }
+
+    /** Units of each bought (not forged) part one run uses, summed over every place it appears in the tree. */
+    public static Map<String, Double> boughtInputs(Step tree) {
+        Map<String, Double> out = new LinkedHashMap<>();
+        addBought(tree, out);
+        return out;
+    }
+
+    private static void addBought(Step s, Map<String, Double> out) {
+        if (!s.forged()) {
+            out.merge(s.id(), s.quantity(), Double::sum);
+            return;
+        }
+        for (Step p : s.parts()) addBought(p, out);
+    }
+
+    /**
+     * Runs per hour: the least of what your slots can forge, what the market buys (marketUnitsPerHour / units per run) and,
+     * for every bought part, how fast you can get it (supplyPerHour / units per run). NaN means unknown: no cap from that
+     * source. Ties go to slots, then the market, so a cap is only blamed on supply when supply is strictly tighter.
+     */
+    public static Throughput throughput(Route route, Recipe recipe, int slots, double marketUnitsPerHour,
+                                        java.util.function.ToDoubleFunction<String> supplyPerHour) {
+        double runs = Math.max(1, slots) * 3600.0 / route.slotSeconds();
+        String limit = Throughput.SLOTS;
+        double limitPerHour = Double.NaN;
+        if (marketUnitsPerHour >= 0 && marketUnitsPerHour / recipe.count() < runs) {
+            runs = marketUnitsPerHour / recipe.count();
+            limit = Throughput.MARKET;
+            limitPerHour = marketUnitsPerHour;
+        }
+        for (var e : boughtInputs(route.tree()).entrySet()) {
+            double supply = supplyPerHour.applyAsDouble(e.getKey());
+            if (supply >= 0 && supply / e.getValue() < runs) {
+                runs = supply / e.getValue();
+                limit = e.getKey();
+                limitPerHour = supply;
+            }
+        }
+        return new Throughput(runs, route.profit() * runs, limit, limitPerHour);
+    }
+
     /** Profit per hour running this route in every slot, capped by how many the market buys per hour (NaN = no cap known). */
     public static double profitPerHour(Route route, Recipe recipe, int slots, double marketUnitsPerHour) {
-        double uncapped = route.profitPerSlotHour() * Math.max(1, slots);
-        if (!(marketUnitsPerHour >= 0)) return uncapped;
-        double profitPerUnit = route.profit() / recipe.count();
-        return Math.min(uncapped, profitPerUnit * marketUnitsPerHour);
+        return throughput(route, recipe, slots, marketUnitsPerHour, id -> Double.NaN).profitPerHour();
     }
 
     // ---- route at a given rate ----

@@ -54,7 +54,8 @@ class ForgeCalcTest {
         JsonObject products = new JsonObject();
         var prices = ForgeCalc.prices(products, lbin, avg, 0.0125, (i, p, a) -> true);
 
-        List<ForgeCalc.Row> rows = ForgeCalc.rank(recipes, prices, products, lbin, avg, id -> 0.25, 7, 1.0, 0, 0);
+        // the part is plentiful, so only the output's 6 sales a day can explain the cap
+        List<ForgeCalc.Row> rows = ForgeCalc.rank(recipes, prices, products, lbin, avg, id -> id.equals("UPGRADE") ? 0.25 : 1000, 7, 1.0, 0, 0);
         assertEquals(1, rows.size());
         double profit = 10_000_000 * 0.97 - 5_000_000; // 10M is in the 2% listing tier, plus 1% claim tax
         assertEquals(profit, rows.get(0).route().profit(), 1e-6);
@@ -68,13 +69,59 @@ class ForgeCalcTest {
         Map<String, Double> lbin = Map.of("UPGRADE", 10_000_000.0, "PART", 5_000_000.0);
         JsonObject products = new JsonObject();
         var prices = ForgeCalc.prices(products, lbin, Map.of(), 0.0125, (i, p, a) -> true);
-        assertTrue(ForgeCalc.rank(recipes, prices, products, lbin, Map.of(), id -> Double.NaN, 7, 1.0, 0, 0).isEmpty(), "still loading");
-        assertTrue(ForgeCalc.rank(recipes, prices, products, lbin, Map.of(), id -> 0, 7, 1.0, 0, 0).isEmpty(), "nobody buys it");
+        // the part's volume is known each time: only the output's missing or zero volume can hide the route
+        assertTrue(ForgeCalc.rank(recipes, prices, products, lbin, Map.of(), id -> id.equals("UPGRADE") ? Double.NaN : 1000, 7, 1.0, 0, 0)
+                .isEmpty(), "output volume still loading");
+        assertTrue(ForgeCalc.rank(recipes, prices, products, lbin, Map.of(), id -> id.equals("UPGRADE") ? 0 : 1000, 7, 1.0, 0, 0)
+                .isEmpty(), "nobody buys the output");
     }
 
     private static JsonObject bazaarProduct(double bid, double ask, double soldPerWeek) {
+        return bazaarProduct(bid, ask, soldPerWeek, soldPerWeek);
+    }
+
+    /** buyMovingWeek = bought instantly from sell offers (how fast you sell); sellMovingWeek = sold instantly into buy orders (how fast you buy). */
+    private static JsonObject bazaarProduct(double bid, double ask, double buyMovingWeek, double sellMovingWeek) {
         return JsonParser.parseString("{\"sell_summary\":[{\"pricePerUnit\":" + bid + "}],\"buy_summary\":[{\"pricePerUnit\":" + ask
-                + "}],\"quick_status\":{\"buyMovingWeek\":" + soldPerWeek + ",\"sellMovingWeek\":" + soldPerWeek + "}}").getAsJsonObject();
+                + "}],\"quick_status\":{\"buyMovingWeek\":" + buyMovingWeek + ",\"sellMovingWeek\":" + sellMovingWeek + "}}").getAsJsonObject();
+    }
+
+    /** Buy orders for a part fill only as fast as people insta-sell it, so 3 an hour caps a route needing 1 per run at 3 runs. */
+    @Test
+    void bazaarPartsFillAtTheirInstaSellVolume() {
+        var recipes = oneRecipe("REFINED", 3600, "RAW");
+        JsonObject products = new JsonObject();
+        products.add("REFINED", bazaarProduct(150, 200, 168_000));
+        products.add("RAW", bazaarProduct(100, 110, 168_000, 3 * 168)); // insta-bought a lot, insta-sold 3 an hour
+        var prices = ForgeCalc.prices(products, Map.of(), Map.of(), 0.0125, (i, p, a) -> true);
+
+        ForgeCalc.Row row = ForgeCalc.rank(recipes, prices, products, Map.of(), Map.of(), id -> Double.NaN, 7, 1.0, 0, 0).get(0);
+        assertEquals(3, row.throughput().runsPerHour(), 1e-9);
+        assertEquals("RAW", row.throughput().limitingInput());
+        assertEquals(row.route().profit() * 3, row.perHour(), 1e-9);
+    }
+
+    @Test
+    void auctionPartsAreLimitedByTheirSalesRate() {
+        var recipes = Map.of("UPGRADE", new Recipe("UPGRADE", 1, 30, 0, Map.of("PART", 2.0)));
+        Map<String, Double> lbin = Map.of("UPGRADE", 9_000_000.0, "PART", 1_000_000.0);
+        JsonObject products = new JsonObject();
+        var prices = ForgeCalc.prices(products, lbin, Map.of(), 0.0125, (i, p, a) -> true);
+        Map<String, Double> salesPerHour = Map.of("UPGRADE", 100.0, "PART", 0.5);
+
+        ForgeCalc.Row row = ForgeCalc.rank(recipes, prices, products, lbin, Map.of(), salesPerHour::get, 7, 1.0, 0, 0).get(0);
+        assertEquals(0.25, row.throughput().runsPerHour(), 1e-9, "half a PART an hour, two per run");
+        assertEquals("PART", row.throughput().limitingInput());
+    }
+
+    @Test
+    void aRouteWaitsWhileAnAuctionPartsVolumeLoads() {
+        var recipes = oneRecipe("UPGRADE", 30, "PART");
+        Map<String, Double> lbin = Map.of("UPGRADE", 9_000_000.0, "PART", 1_000_000.0);
+        JsonObject products = new JsonObject();
+        var prices = ForgeCalc.prices(products, lbin, Map.of(), 0.0125, (i, p, a) -> true);
+        assertTrue(ForgeCalc.rank(recipes, prices, products, lbin, Map.of(), id -> id.equals("UPGRADE") ? 100 : Double.NaN, 7, 1.0, 0, 0)
+                .isEmpty(), "the output's volume is known but PART's isn't yet");
     }
 
     @Test

@@ -215,6 +215,58 @@ class ForgePlannerTest {
         assertEquals(700, ForgePlanner.profitPerHour(r, rec, 7, 1000), 1e-9);
     }
 
+    // ---- input supply ----
+
+    /** 7 slots could run it 7 times an hour, but only 20 RAW an hour can be bought and each run needs 10. */
+    @Test
+    void aPartYouCantBuyFastEnoughCapsTheRoute() {
+        recipe("TOP", HOUR, 0, "RAW", 10);
+        sell.put("TOP", 1000.0);
+        buy.put("RAW", 10.0);
+        Route r = best("TOP");
+
+        ForgePlanner.Throughput t = ForgePlanner.throughput(r, recipes.get("TOP"), 7, 100, id -> id.equals("RAW") ? 20 : Double.NaN);
+        assertEquals(2, t.runsPerHour(), 1e-9);
+        assertEquals(900 * 2, t.profitPerHour(), 1e-9);
+        assertEquals("RAW", t.limitingInput());
+        assertEquals(20, t.limitPerHour(), 1e-9);
+    }
+
+    @Test
+    void aPartNeededInSeveralPlacesIsCountedOnce() {
+        recipe("TOP", 30, 0, "LEFT", 1, "RIGHT", 1);
+        recipe("LEFT", HOUR, 0, "RAW", 5);
+        recipe("RIGHT", HOUR, 0, "RAW", 5);
+        sell.put("TOP", 1000.0);
+        buy.put("RAW", 10.0); // LEFT and RIGHT can't be bought: both forged, both eat RAW
+        Route r = best("TOP");
+
+        assertEquals(Map.of("RAW", 10.0), ForgePlanner.boughtInputs(r.tree()));
+        ForgePlanner.Throughput t = ForgePlanner.throughput(r, recipes.get("TOP"), 7, Double.NaN, id -> 10);
+        assertEquals(1, t.runsPerHour(), 1e-9, "10 RAW an hour, 10 per run");
+    }
+
+    @Test
+    void theTightestLimitIsTheOneNamed() {
+        recipe("TOP", HOUR, 0, "RAW", 1);
+        sell.put("TOP", 1000.0);
+        buy.put("RAW", 10.0);
+        Route r = best("TOP");
+        Recipe rec = recipes.get("TOP");
+
+        var slots = ForgePlanner.throughput(r, rec, 7, 1000, id -> 1000);
+        assertEquals(ForgePlanner.Throughput.SLOTS, slots.limit());
+        assertEquals(7, slots.runsPerHour(), 1e-9);
+        assertNull(slots.limitingInput());
+
+        var market = ForgePlanner.throughput(r, rec, 7, 3, id -> 1000);
+        assertEquals(ForgePlanner.Throughput.MARKET, market.limit());
+        assertEquals(3, market.runsPerHour(), 1e-9);
+
+        var unknown = ForgePlanner.throughput(r, rec, 7, Double.NaN, id -> Double.NaN);
+        assertEquals(7, unknown.runsPerHour(), 1e-9, "no data is no cap here (ForgeCalc hides loading items itself)");
+    }
+
     // ---- optimality: compare against trying every make-or-buy combination ----
 
     private record Option(double coins, double slotSeconds) { }

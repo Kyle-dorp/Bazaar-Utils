@@ -30,13 +30,14 @@ import java.util.concurrent.Executors;
  * bought at the lowest BIN, sold at the lower of the lowest BIN and its 3-day average (a single cheap or inflated listing
  * swings the BIN a lot; the SX-R326 sat at 16.8M BIN against a 9.4M 3-day average) minus the AH listing fee and claim tax.
  * Profit per hour is capped by how many the market takes: Bazaar outputs by their 7-day sell volume, AH outputs by Coflnet's
- * recent sales per day (without that cap a 30-second AH upgrade "earns" billions an hour). An AH item stays hidden until its
- * volume has loaded rather than showing an uncapped number.
+ * recent sales per day (without that cap a 30-second AH upgrade "earns" billions an hour), and by how fast you can get every
+ * part you buy: Bazaar buy orders fill at the part's 7-day insta-sell volume, AH parts at their own sales rate. An AH item or
+ * part stays hidden until its volume has loaded rather than showing an uncapped number.
  */
 public class ForgeCalc {
     /** A ranked forge flip: the route, the recipe it forges, profit per hour across your slots, and how the output sells. */
     public record Row(Route route, Recipe recipe, double perHour, boolean soldOnAh, double lowestBin, double avgBin,
-                      double marketPerHour) {
+                      double marketPerHour, ForgePlanner.Throughput throughput) {
         public double perDay() {
             return perHour * 24;
         }
@@ -277,9 +278,17 @@ public class ForgeCalc {
             double market = onAh ? ahSalesPerHour.applyAsDouble(route.id())
                     : BazaarSnapshot.sellRate(products.getAsJsonObject(route.id()));
             if (!(market > 0)) continue; // no sales data yet, or nobody buys it
-            double perHour = ForgePlanner.profitPerHour(route, recipe, slots, market);
-            out.add(new Row(route, recipe, perHour, onAh, lbin.getOrDefault(ahKey(route.id()), Double.NaN),
-                    avg.getOrDefault(ahKey(route.id()), Double.NaN), market));
+            // every bought part needs a supply rate: Bazaar buy orders fill at the part's insta-sell volume, AH parts at
+            // their sales rate (NaN while loading: leave the route out until it's known instead of showing it uncapped)
+            java.util.function.ToDoubleFunction<String> supply = id -> products.has(id)
+                    ? BazaarSnapshot.fillRate(products.getAsJsonObject(id)) : ahSalesPerHour.applyAsDouble(id);
+            boolean loading = false;
+            for (String part : ForgePlanner.boughtInputs(route.tree()).keySet()) loading |= Double.isNaN(supply.applyAsDouble(part));
+            if (loading) continue;
+            ForgePlanner.Throughput t = ForgePlanner.throughput(route, recipe, slots, market, supply);
+            if (!(t.profitPerHour() > 0)) continue; // a part nobody sells
+            out.add(new Row(route, recipe, t.profitPerHour(), onAh, lbin.getOrDefault(ahKey(route.id()), Double.NaN),
+                    avg.getOrDefault(ahKey(route.id()), Double.NaN), market, t));
         }
         out.sort((a, b) -> Double.compare(b.perHour(), a.perHour()));
         return out;
@@ -310,6 +319,19 @@ public class ForgeCalc {
         }
     }
 
+    /** What caps the route, short (for the HUD) or with numbers (for /forgeroute). */
+    static String limitText(Row row, int slots, boolean detailed) {
+        ForgePlanner.Throughput t = row.throughput();
+        String input = t.limitingInput();
+        if (input == null && ForgePlanner.Throughput.MARKET.equals(t.limit())) {
+            return detailed ? "demand (~" + qty(Math.round(t.limitPerHour() * 24 * 10) / 10.0) + " sold/day)" : "demand";
+        }
+        if (input == null) return detailed ? "your " + slots + " forge slots" : "slots";
+        if (!detailed) return name(input) + " supply";
+        double perRun = ForgePlanner.boughtInputs(row.route().tree()).get(input);
+        return name(input) + " supply (~" + qty(Math.round(t.limitPerHour() * 24 * 10) / 10.0) + "/day, " + qty(perRun) + " per run)";
+    }
+
     /** The route as chat lines: the tree of forge/buy decisions, then the totals. */
     public static List<String> routeLines(Row row, int slots, double checkHours) {
         Route r = row.route();
@@ -325,6 +347,8 @@ public class ForgeCalc {
                 + (checkHours > 0 ? ", collecting every " + duration(checkHours * 3600) : ""));
         lines.add("§a" + FlipHud.coins(r.profitPerSlotHour()) + "/hr per slot §7| §a" + FlipHud.coins(row.perHour())
                 + "/hr §7| §a" + FlipHud.coins(row.perDay()) + "/day §7with " + slots + " slots");
+        lines.add("§7Limited by §f" + limitText(row, slots, true) + " §7- §f"
+                + qty(Math.round(row.throughput().runsPerHour() * 24 * 10) / 10.0) + " §7runs/day");
         lines.add("§7Market takes ~§f" + qty(Math.round(row.marketPerHour() * 24 * 10) / 10.0) + "/day"
                 + (row.soldOnAh() ? " §7(AH sales, Coflnet)" : " §7(Bazaar 7-day volume)")
                 + (isPet(row.route().id()) ? " §8- counts every level and rarity of this pet" : ""));
