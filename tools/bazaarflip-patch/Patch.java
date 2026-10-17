@@ -11,7 +11,7 @@ public class Patch {
 
     public static void main(String[] a) throws Exception {
         Path in = Path.of(a[0]), out = Path.of(a[1]);
-        int patched = 0, taxed = 0, qtyPatched = 0, daemon = 0, perHour = 0, swapped = 0, labels = 0, rateGate = 0, hud = 0, page2 = 0, avgGate = 0, screens = 0;
+        int patched = 0, taxed = 0, qtyPatched = 0, daemon = 0, perHour = 0, swapped = 0, labels = 0, rateGate = 0, hud = 0, page2 = 0, avgGate = 0, screens = 0, quiet = 0;
         try (ZipFile zf = new ZipFile(in.toFile());
              ZipOutputStream zo = new ZipOutputStream(Files.newOutputStream(out))) {
             var en = zf.entries();
@@ -113,6 +113,23 @@ public class Patch {
                                 break;
                             }
                         }
+                        // no "[BazaarFlip] Bazaar monitoring active" chat line every time a Bazaar menu opens: drop just the
+                        // aload/getfield player/ldc/Component.literal/sendSystemMessage sequence, keep the check it triggers
+                        for (AbstractInsnNode n = m.instructions.getFirst(); n != null; n = n.getNext()) {
+                            if (n instanceof LdcInsnNode l && l.cst instanceof String s && s.contains("Bazaar monitoring active")) {
+                                AbstractInsnNode getPlayer = l.getPrevious(), mc = getPlayer.getPrevious();
+                                AbstractInsnNode literal = l.getNext(), send = literal.getNext();
+                                if (mc.getOpcode() == Opcodes.ALOAD
+                                        && getPlayer instanceof FieldInsnNode f && f.name.equals("player")
+                                        && literal instanceof MethodInsnNode lit && lit.name.equals("literal")
+                                        && send instanceof MethodInsnNode sm && sm.name.equals("sendSystemMessage")) {
+                                    AbstractInsnNode before = mc.getPrevious();
+                                    for (AbstractInsnNode x : new AbstractInsnNode[]{mc, getPlayer, l, literal, send}) m.instructions.remove(x);
+                                    quiet++;
+                                    n = before;
+                                }
+                            }
+                        }
                         // open our compact settings screen instead of the stock one
                         for (AbstractInsnNode n = m.instructions.getFirst(); n != null; n = n.getNext()) {
                             if (n instanceof TypeInsnNode t && t.getOpcode() == Opcodes.NEW
@@ -212,6 +229,6 @@ public class Patch {
                 zo.closeEntry();
             }
         }
-        System.out.println("patched sites: " + patched + ", taxed: " + taxed + ", qty: " + qtyPatched + ", daemon: " + daemon + ", perHour: " + perHour + ", swapped: " + swapped + ", labels: " + labels + ", page2: " + page2 + ", hud: " + hud + ", rateGate: " + rateGate + ", avgGate: " + avgGate + ", screens: " + screens);
+        System.out.println("patched sites: " + patched + ", taxed: " + taxed + ", qty: " + qtyPatched + ", daemon: " + daemon + ", perHour: " + perHour + ", swapped: " + swapped + ", labels: " + labels + ", page2: " + page2 + ", hud: " + hud + ", rateGate: " + rateGate + ", avgGate: " + avgGate + ", screens: " + screens + ", quiet: " + quiet);
     }
 }
