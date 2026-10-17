@@ -358,6 +358,17 @@ public class ForgeCalc {
     @RunOnInit
     public static void registerCommand() {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, buildContext) ->
+                dispatcher.register(ClientCommands.literal("forgetree")
+                        .executes(ctx -> {
+                            openTree(1);
+                            return 1;
+                        })
+                        .then(ClientCommands.argument("rank", IntegerArgumentType.integer(1))
+                                .executes(ctx -> {
+                                    openTree(IntegerArgumentType.getInteger(ctx, "rank"));
+                                    return 1;
+                                }))));
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, buildContext) ->
                 dispatcher.register(ClientCommands.literal("forgeroute")
                         .executes(ctx -> {
                             printRoute(1);
@@ -368,6 +379,21 @@ public class ForgeCalc {
                                     printRoute(IntegerArgumentType.getInteger(ctx, "rank"));
                                     return 1;
                                 }))));
+    }
+
+    /** /forgetree [rank]: the route as a tree screen (the same one clicking a forge row opens). */
+    private static void openTree(int rank) {
+        refreshIfStale();
+        List<Row> list = rows;
+        if (list.isEmpty()) {
+            PlayerActionUtil.notifyAll("Forge flips are still loading (or none are profitable). Try again in a few seconds.");
+            return;
+        }
+        if (rank > list.size()) {
+            PlayerActionUtil.notifyAll("Only " + list.size() + " forge flips right now.");
+            return;
+        }
+        ForgeTreeScreen.open(list.get(rank - 1));
     }
 
     private static void printRoute(int rank) {

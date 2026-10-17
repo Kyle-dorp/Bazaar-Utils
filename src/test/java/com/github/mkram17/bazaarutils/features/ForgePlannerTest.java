@@ -267,6 +267,49 @@ class ForgePlannerTest {
         assertEquals(7, unknown.runsPerHour(), 1e-9, "no data is no cap here (ForgeCalc hides loading items itself)");
     }
 
+    // ---- forge queue (what to start, in what order) ----
+
+    /** The SX-R326 tree with every intermediate forged: Golden Plate appears three times, Refined Mithril in two places. */
+    private Route sxR326ForgedFromScratch() {
+        recipe("SX326", 30, 0, "GOLDEN_PLATE", 1, "SX226", 1, "MITHRIL_PLATE", 1);
+        recipe("GOLDEN_PLATE", 6 * HOUR, 0, "GOLD_BLOCK", 2, "JEWEL", 5, "REFINED_DIAMOND", 1);
+        recipe("REFINED_DIAMOND", 8 * HOUR, 0, "DIAMOND_BLOCK", 2);
+        recipe("SX226", 4 * HOUR, 0, "REFINED_MITHRIL", 3, "DRILL_MOTOR", 1, "FUEL", 1);
+        recipe("DRILL_MOTOR", 30 * HOUR, 0, "IRON_BLOCK", 1, "REDSTONE_BLOCK", 3, "TREASURITE", 10, "GOLDEN_PLATE", 1);
+        recipe("MITHRIL_PLATE", 18 * HOUR, 0, "IRON_BLOCK", 1, "GOLDEN_PLATE", 1, "REFINED_TITANIUM", 1, "REFINED_MITHRIL", 5);
+        recipe("REFINED_MITHRIL", 6 * HOUR, 0, "ENCH_MITHRIL", 160);
+        recipe("REFINED_TITANIUM", 12 * HOUR, 0, "ENCH_TITANIUM", 16);
+        for (String raw : List.of("GOLD_BLOCK", "JEWEL", "DIAMOND_BLOCK", "IRON_BLOCK", "REDSTONE_BLOCK", "TREASURITE", "FUEL",
+                "ENCH_MITHRIL", "ENCH_TITANIUM")) buy.put(raw, 10.0);
+        sell.put("SX326", 10_000_000.0); // the intermediates can't be bought, so all of them are forged
+        return best("SX326");
+    }
+
+    @Test
+    void theForgeQueueGroupsEachPartAndOrdersItByWhenItCanStart() {
+        List<ForgePlanner.QueueItem> queue = ForgePlanner.forgeQueue(sxR326ForgedFromScratch().tree());
+        List<String> order = queue.stream().map(q -> q.stage() + ":" + q.id() + "x" + qty(q.forges())).toList();
+        assertEquals(List.of(
+                "1:REFINED_TITANIUMx1", "1:REFINED_DIAMONDx3", "1:REFINED_MITHRILx8", // parts all bought: start now, longest first
+                "2:GOLDEN_PLATEx3",
+                "3:DRILL_MOTORx1", "3:MITHRIL_PLATEx1",
+                "4:SX226x1",
+                "5:SX326x1"), order);
+        assertEquals(6 * HOUR, queue.stream().filter(q -> q.id().equals("GOLDEN_PLATE")).findFirst().orElseThrow().secondsPerForge(), 1e-9);
+    }
+
+    @Test
+    void theShoppingListAddsUpEveryPlaceAPartIsUsed() {
+        Map<String, Double> shopping = ForgePlanner.boughtInputs(sxR326ForgedFromScratch().tree());
+        assertEquals(8 * 160, shopping.get("ENCH_MITHRIL"), 1e-9, "3 + 5 Refined Mithril");
+        assertEquals(3 * 2, shopping.get("GOLD_BLOCK"), 1e-9, "three Golden Plates");
+        assertEquals(2, shopping.get("IRON_BLOCK"), 1e-9);
+    }
+
+    private static String qty(double q) {
+        return q == Math.floor(q) ? String.valueOf((long) q) : String.valueOf(q);
+    }
+
     // ---- optimality: compare against trying every make-or-buy combination ----
 
     private record Option(double coins, double slotSeconds) { }

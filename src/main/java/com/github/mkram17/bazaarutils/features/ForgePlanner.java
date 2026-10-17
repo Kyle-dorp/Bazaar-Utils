@@ -137,6 +137,37 @@ public final class ForgePlanner {
         for (Step p : s.parts()) addBought(p, out);
     }
 
+    /** One line of the forge queue: {@code forges} forges of {@code id}, {@code secondsPerForge} each, startable at {@code stage}. */
+    public record QueueItem(String id, double forges, double secondsPerForge, int stage) { }
+
+    /**
+     * Every forge a route needs, grouped by item. Stage 1 can start right away (all its parts are bought), stage 2 needs
+     * stage-1 results, and so on up to the item itself. Sorted by stage, then longest forge first so slow ones start early.
+     */
+    public static List<QueueItem> forgeQueue(Step tree) {
+        Map<String, double[]> byId = new LinkedHashMap<>(); // id -> {forges, secondsPerForge, stage}
+        stage(tree, byId);
+        List<QueueItem> out = new ArrayList<>();
+        for (var e : byId.entrySet()) {
+            double[] v = e.getValue();
+            out.add(new QueueItem(e.getKey(), v[0], v[1], (int) v[2]));
+        }
+        out.sort(Comparator.comparingInt(QueueItem::stage)
+                .thenComparing(Comparator.comparingDouble(QueueItem::secondsPerForge).reversed()));
+        return out;
+    }
+
+    /** Records this forged step in the queue and returns its stage (0 for a bought part). */
+    private static int stage(Step s, Map<String, double[]> byId) {
+        if (!s.forged()) return 0;
+        int stage = 1;
+        for (Step p : s.parts()) stage = Math.max(stage, stage(p, byId) + 1);
+        double[] v = byId.computeIfAbsent(s.id(), k -> new double[]{0, s.secondsPerForge(), 0});
+        v[0] += s.forges();
+        v[2] = Math.max(v[2], stage);
+        return stage;
+    }
+
     /**
      * Runs per hour: the least of what your slots can forge, what the market buys (marketUnitsPerHour / units per run) and,
      * for every bought part, how fast you can get it (supplyPerHour / units per run). NaN means unknown: no cap from that

@@ -30,13 +30,18 @@ public class FlipHud {
     private static final String MOD = "uwu.ramona.bazaar.BazaarFlipMod";
     private static final String ITEM = "uwu.ramona.bazaar.BazaarFlipMod$BazaarItem";
 
-    private static final int WIDTH = 250, TITLE_H = 22, ROW_H = 36;
+    private static final int WIDTH = FlipHudLayout.WIDTH, TITLE_H = FlipHudLayout.TITLE_H, ROW_H = FlipHudLayout.ROW_H;
 
     private static int scroll;
     private static boolean dragging;
     private static int dragOffX, dragOffY;
     // last drawn bounds in screen (GUI) pixels, for scroll hit-testing
     private static volatile int boundsLeft, boundsTop, boundsRight, boundsBottom;
+    // what the last frame drew, so a click maps back to the forge row that was under the cursor
+    private static volatile List<ForgeCalc.Row> forgeRowsShown = List.of();
+    private static volatile int lastMode = -1, lastPanelX, lastPanelY, lastVisible, lastScroll, lastCount;
+    private static volatile float lastScale = 1;
+    private static volatile long lastRenderMs;
 
     // ---- reflection helpers ----
 
@@ -151,7 +156,8 @@ public class FlipHud {
         if (mode == 3) {
             ForgeCalc.refreshIfStale();
             int slots = BaseProfit.getForgeSlots();
-            for (ForgeCalc.Row f : ForgeCalc.get()) {
+            List<ForgeCalc.Row> forge = ForgeCalc.get();
+            for (ForgeCalc.Row f : forge) {
                 ForgePlanner.Route r = f.route();
                 out.add(new Row(ForgeCalc.name(r.id()) + (f.soldOnAh() ? " §6[forge, AH]" : " §6[forge]"), f.perHour(),
                         "§7" + r.forgeSteps() + (r.forgeSteps() == 1 ? " forge, §r" : " forges, §r") + ForgeCalc.duration(r.slotSeconds())
@@ -161,6 +167,7 @@ public class FlipHud {
                                 + " §e" + coins(f.perDay()) + "/day"));
             }
             int cap = Math.max(1, cfgInt("bazaarGuiTopItemsByPercentageCount") + cfgInt("bazaarGuiTopItemsByMoneyCount"));
+            forgeRowsShown = forge.subList(0, Math.min(forge.size(), cap)); // same order as the rows drawn
             return out.size() > cap ? new ArrayList<>(out.subList(0, cap)) : out;
         }
         if (mode == 2) {
@@ -246,6 +253,14 @@ public class FlipHud {
         }
 
         int x = Math.round(guiX / s), y = Math.round(guiY / s);
+        lastMode = mode;
+        lastPanelX = x;
+        lastPanelY = y;
+        lastScale = s;
+        lastVisible = visible;
+        lastScroll = scroll;
+        lastCount = items.size();
+        lastRenderMs = System.currentTimeMillis();
         boundsLeft = guiX;
         boundsTop = guiY;
         boundsRight = guiX + Math.round(WIDTH * s);
@@ -284,7 +299,7 @@ public class FlipHud {
                 int idx = scroll + i;
                 if (idx >= items.size()) break;
                 Row row = items.get(idx);
-                int ry = y + TITLE_H + 3 + i * ROW_H;
+                int ry = FlipHudLayout.rowTextY(y, i);
                 if (i > 0) g.fill(x + 4, ry - 2, x + WIDTH - 4, ry - 1, 0x20FFFFFF);
 
                 String perHour = coins(row.perHour()) + "/hr";
@@ -324,6 +339,25 @@ public class FlipHud {
             if (!screen.getTitle().getString().replaceAll("§.", "").contains("The Forge")) return;
             ScreenEvents.afterExtract(screen).register((s, g, mouseX, mouseY, delta) -> render(g, mouseX, mouseY, 3));
         });
+    }
+
+    @RunOnInit
+    public static void registerForgeRowClick() {
+        // clicking a forge row opens its route tree: only where the panel was drawn just now, never over an open container
+        ScreenEvents.AFTER_INIT.register((client, screen, w, h) ->
+                ScreenMouseEvents.allowMouseClick(screen).register((s, click) -> {
+                    if (click.button() != 0 || lastMode != 3 || System.currentTimeMillis() - lastRenderMs > 250) return true;
+                    if (s instanceof com.github.mkram17.bazaarutils.mixin.AccessorAbstractContainerScreen c
+                            && FlipHudLayout.inside(click.x(), click.y(), c.getLeftPos(), c.getTopPos(), c.getImageWidth(), c.getImageHeight())) {
+                        return true;
+                    }
+                    List<ForgeCalc.Row> shown = forgeRowsShown;
+                    int index = FlipHudLayout.rowAt(click.x(), click.y(), lastPanelX, lastPanelY, lastScale, lastScroll, lastVisible,
+                            Math.min(lastCount, shown.size()));
+                    if (index < 0) return true;
+                    ForgeTreeScreen.open(shown.get(index));
+                    return false; // handled: don't also click whatever is behind the panel
+                }));
     }
 
     @RunOnInit

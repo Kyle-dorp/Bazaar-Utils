@@ -10,6 +10,9 @@ public interface AccessorAbstractContainerScreen {
     @Accessor("imageWidth")
     int getImageWidth();
 
+    @Accessor("imageHeight")
+    int getImageHeight();
+
     @Accessor("leftPos")
     int getLeftPos();
 
