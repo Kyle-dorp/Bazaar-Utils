@@ -25,14 +25,18 @@ import java.util.regex.Pattern;
  * outside the game, so the flip, book and fusion rows are rebuilt here with the same rules (and the calculators' own record
  * types). Forge rows come from ForgeCalc.rank itself.
  *
+ * <p>Advisor settings (order check-in, item limit, market share range, anvil combines per hour) come from
+ * config/bazaarutils-advisor.json, or the defaults if the game hasn't written one yet. Each purse is planned with your share of
+ * every market from the live order book; the first scenario shows the phase 1 model (whole 7-day volume, free anvil time) on
+ * the same data for comparison.
+ *
  * <pre>ADVISOR_LIVE=1 ADVISOR_REPORT=out.txt ./gradlew :26.2:test --tests "*OpportunityAdvisorLiveProbe*"</pre>
  */
 @EnabledIfEnvironmentVariable(named = "ADVISOR_LIVE", matches = "1")
 class OpportunityAdvisorLiveProbe {
     private static final Path CONFIG = Path.of(System.getenv().getOrDefault("ADVISOR_MC_CONFIG",
             System.getenv("APPDATA") + "/.minecraft/config"));
-    private static final double ORDER_CHECK_HOURS = 1;
-    private static final int MAX_ACTIVE = 7;
+    private static final MarketShare FULL = MarketShare.fixed(1);
 
     private final StringBuilder out = new StringBuilder();
     private final ExecutorService pool = Executors.newFixedThreadPool(8);
@@ -42,6 +46,7 @@ class OpportunityAdvisorLiveProbe {
     // the player's settings (bazaarflip-baseprofit.json, bazaarflip.json)
     private double tax, minProfit, tolerance, quickForge, forgeCheckHours, minMargin, maxMargin, spendLimit;
     private int slots;
+    private AdvisorConfig advisor = AdvisorConfig.DEFAULTS;
 
     private void line(String s) {
         out.append(s).append('\n');
@@ -54,22 +59,32 @@ class OpportunityAdvisorLiveProbe {
         JsonObject products = BazaarSnapshot.products();
         line("Live advisor run " + java.time.ZonedDateTime.now() + ", " + products.size() + " Bazaar products");
         line(String.format("Settings: tax %.2f%%, min profit/item %s, 7-day tolerance %.0f%%, flip margin >= %.0f%%, spend limit %s,"
-                        + " %d forge slots, forge check-in %.1fh, order check-in %.1fh, max %d Bazaar items",
+                        + " %d forge slots, forge check-in %.1fh, order check-in %.1fh, max %d Bazaar items,"
+                        + " market share %s-%s (from the order book), %s anvil combines/hr",
                 tax * 100, OpportunityAdvisor.coins(minProfit), tolerance * 100, minMargin, OpportunityAdvisor.coins(spendLimit),
-                slots, forgeCheckHours, ORDER_CHECK_HOURS, MAX_ACTIVE));
+                slots, forgeCheckHours, advisor.orderCheckHours(), advisor.maxActive(),
+                OpportunityAdvisor.percent(advisor.shareMinPercent() / 100), OpportunityAdvisor.percent(advisor.shareMaxPercent() / 100),
+                OpportunityAdvisor.amount(advisor.combinesPerHour())));
 
-        List<Opportunity> flips = flips(products);
-        List<Opportunity> books = books(products);
-        List<Opportunity> fusions = fusions(products);
+        MarketShare shares = advisor.shares(products);
+        List<Opportunity> flips = flips(products, shares);
+        List<Opportunity> books = books(products, shares);
+        List<Opportunity> fusions = fusions(products, shares);
         Map<String, Double> lbin = ForgeCalc.fetchPrices("https://hysky.de/api/auctions/lowestbins");
         Map<String, Double> avg = ForgeCalc.fetchPrices("https://hysky.de/api/auctions/lowestbins/average?days=3");
         Map<String, Double> sales = new ConcurrentHashMap<>();
         line(String.format("Rows: %d flips, %d book crafts, %d fusions (data in %.1fs)", flips.size(), books.size(), fusions.size(),
                 (System.currentTimeMillis() - t0) / 1000.0));
+        shareSummary(flips, books, fusions);
 
+        // the phase 1 model on the same data: every market's whole volume, anvil time free
+        scenario(products, lbin, avg, sales, flips(products, FULL), books(products, FULL), fusions(products, FULL), 250e6, false,
+                FULL, Double.POSITIVE_INFINITY, "phase 1 model: whole 7-day volume, free anvil time");
         double[] purses = {Double.POSITIVE_INFINITY, 15e6, 50e6, 250e6, 1e9};
-        for (double purse : purses) scenario(products, lbin, avg, sales, flips, books, fusions, purse, false);
-        scenario(products, lbin, avg, sales, flips, books, fusions, 50e6, true);
+        for (double purse : purses) {
+            scenario(products, lbin, avg, sales, flips, books, fusions, purse, false, shares, advisor.combinesPerHour(), "");
+        }
+        scenario(products, lbin, avg, sales, flips, books, fusions, 50e6, true, shares, advisor.combinesPerHour(), "");
 
         pool.shutdownNow();
         String report = out.toString();
@@ -78,9 +93,22 @@ class OpportunityAdvisorLiveProbe {
         System.out.println(report);
     }
 
+    /** How the order book spreads the options over the share range. */
+    private void shareSummary(List<Opportunity> flips, List<Opportunity> books, List<Opportunity> fusions) {
+        StringBuilder sb = new StringBuilder("Shares from the order book:");
+        for (List<Opportunity> kind : List.of(flips, books, fusions)) {
+            if (kind.isEmpty()) continue;
+            double[] v = kind.stream().mapToDouble(Opportunity::share).sorted().toArray();
+            sb.append(" ").append(kind.get(0).kind().label.toLowerCase()).append(" min ").append(OpportunityAdvisor.percent(v[0]))
+                    .append(" / median ").append(OpportunityAdvisor.percent(v[v.length / 2])).append(" / max ")
+                    .append(OpportunityAdvisor.percent(v[v.length - 1])).append(';');
+        }
+        line(sb.toString());
+    }
+
     private void scenario(JsonObject products, Map<String, Double> lbin, Map<String, Double> avg, Map<String, Double> sales,
-                          List<Opportunity> flips, List<Opportunity> books, List<Opportunity> fusions, double purse, boolean afk)
-            throws Exception {
+                          List<Opportunity> flips, List<Opportunity> books, List<Opportunity> fusions, double purse, boolean afk,
+                          MarketShare shares, double combinesPerHour, String label) throws Exception {
         List<Opportunity> all = new ArrayList<>(flips);
         all.addAll(books);
         all.addAll(fusions);
@@ -88,19 +116,21 @@ class OpportunityAdvisorLiveProbe {
         List<ForgeCalc.Row> rows = forgeRows(products, lbin, avg, sales, purse);
         int forgeCount = 0;
         for (ForgeCalc.Row r : rows) {
-            Opportunity o = Opportunity.forge(r, forgeName(r.route().id()), forgeCheckHours);
+            Opportunity o = Opportunity.forge(r, forgeName(r.route().id()), forgeCheckHours, shares,
+                    id -> products.has(id) ? BazaarSnapshot.fillRate(products.getAsJsonObject(id)) : sales.getOrDefault(id, Double.NaN) / 24.0);
             if (o != null) {
                 all.add(o);
                 forgeCount++;
             }
         }
-        OpportunityAdvisor.Settings s = new OpportunityAdvisor.Settings(purse, slots, MAX_ACTIVE, afk);
+        OpportunityAdvisor.Settings s = new OpportunityAdvisor.Settings(purse, slots, advisor.maxActive(), afk, combinesPerHour);
         long start = System.nanoTime();
         OpportunityAdvisor.Plan plan = OpportunityAdvisor.plan(all, s);
         double ms = (System.nanoTime() - start) / 1e6;
 
         line("");
-        line("=== purse " + OpportunityAdvisor.coins(purse) + (afk ? ", AFK" : "") + " ===  (" + all.size() + " options incl. "
+        line("=== purse " + OpportunityAdvisor.coins(purse) + (afk ? ", AFK" : "") + (label.isEmpty() ? "" : ", " + label)
+                + " ===  (" + all.size() + " options incl. "
                 + forgeCount + " forge routes; plan " + String.format("%.1f", ms) + " ms, " + plan.assignmentsTried()
                 + " slot assignments scored)");
         for (String l : plan.summary()) line("  " + l);
@@ -115,6 +145,7 @@ class OpportunityAdvisorLiveProbe {
 
     private void loadSettings() throws Exception {
         JsonObject b = JsonParser.parseString(Files.readString(CONFIG.resolve("bazaarflip-baseprofit.json"))).getAsJsonObject();
+        advisor = AdvisorConfig.read(CONFIG.resolve("bazaarutils-advisor.json"));
         tax = num(b, "sellTaxPercent", 1.25) / 100;
         minProfit = num(b, "minProfitPerItem", 0);
         tolerance = num(b, "maxVsWeekAveragePercent", 20) / 100;
@@ -224,7 +255,7 @@ class OpportunityAdvisorLiveProbe {
 
     private record FlipRow(String id, double buy, double sell, double profit, double perHour) { }
 
-    private List<Opportunity> flips(JsonObject products) throws Exception {
+    private List<Opportunity> flips(JsonObject products, MarketShare shares) throws Exception {
         List<FlipRow> candidates = new ArrayList<>();
         for (var e : products.entrySet()) {
             JsonObject p = e.getValue().getAsJsonObject();
@@ -243,7 +274,7 @@ class OpportunityAdvisorLiveProbe {
         for (FlipRow f : candidates) {
             if (!passesAverage(f.id(), f.buy(), f.sell())) continue;
             Opportunity o = Opportunity.flip(f.id(), name(f.id()), f.buy(), f.sell(), f.profit(), f.perHour(), typicalBuy(f.id()),
-                    false, ORDER_CHECK_HOURS);
+                    false, advisor.orderCheckHours(), shares);
             if (o != null) out.add(o);
         }
         return out;
@@ -255,7 +286,7 @@ class OpportunityAdvisorLiveProbe {
 
     private record Tier(String id, int tier, double bid, double ask, double sellRate, double buyRate) { }
 
-    private List<Opportunity> books(JsonObject products) throws Exception {
+    private List<Opportunity> books(JsonObject products, MarketShare shares) throws Exception {
         Map<String, Integer> caps = new HashMap<>();
         try (InputStream in = getClass().getResourceAsStream("/assets/bazaarutils/book-craft-caps.json")) {
             JsonObject o = JsonParser.parseString(new String(in.readAllBytes())).getAsJsonObject().getAsJsonObject("caps");
@@ -307,7 +338,7 @@ class OpportunityAdvisorLiveProbe {
         }
         List<Opportunity> out = new ArrayList<>();
         for (BookCraft.Craft c : best.values()) {
-            Opportunity o = Opportunity.book(c, ORDER_CHECK_HOURS);
+            Opportunity o = Opportunity.book(c, advisor.orderCheckHours(), shares);
             if (o != null) out.add(o);
         }
         return out;
@@ -315,7 +346,7 @@ class OpportunityAdvisorLiveProbe {
 
     // ---- FusionCalc.compute, same rules ----
 
-    private List<Opportunity> fusions(JsonObject products) throws Exception {
+    private List<Opportunity> fusions(JsonObject products, MarketShare shares) throws Exception {
         JsonObject o;
         try (InputStream in = getClass().getResourceAsStream("/assets/bazaarutils/fusion-recipes.json")) {
             o = JsonParser.parseString(new String(in.readAllBytes())).getAsJsonObject();
@@ -362,7 +393,7 @@ class OpportunityAdvisorLiveProbe {
         }
         List<Opportunity> res = new ArrayList<>();
         for (FusionCalc.Fusion f : best.values()) {
-            Opportunity op = Opportunity.fusion(f, this::name, ORDER_CHECK_HOURS);
+            Opportunity op = Opportunity.fusion(f, this::name, advisor.orderCheckHours(), shares);
             if (op != null) res.add(op);
         }
         return res;

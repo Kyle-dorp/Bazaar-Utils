@@ -8,30 +8,44 @@ import java.util.*;
  * network access); each calculator's rows become {@link Opportunity}s first. The scoring model is written up in
  * docs/opportunity-advisor.md.
  *
- * <p>The plan maximises expected profit per hour. Three things limit it: the purse (each option ties up coins for as long as
- * they take to come back, by Little's law), the forge slots (whole slots, one route each) and how many Bazaar items you run at
- * once. Forges are passive: they run while you're away and alongside your flipping, so they only compete with the Bazaar for
- * coins. The forge side is searched exhaustively over whole-slot assignments of a short list of routes (the best per slot and
- * the best per coin); for each, the coins left go to the Bazaar options. Without a limit on how many Bazaar items you run,
- * that is the classic fractional knapsack (best return per coin first) and exact. With the limit it tries a few dozen
- * shortlists, from "most profit per hour" to "most profit per coin", and keeps the best.
+ * <p>The plan maximises expected profit per hour. Four things limit it: the purse (each option ties up coins for as long as
+ * they take to come back, by Little's law), the forge slots (whole slots, one route each), how many Bazaar items you run at
+ * once, and your anvil time (book crafts share the combines you can do in an hour). Forges are passive: they run while you're
+ * away and alongside your flipping, so they only compete with the Bazaar for coins. The forge side is searched exhaustively
+ * over whole-slot assignments of a short list of routes (the best per slot and the best per coin); for each, the coins left go
+ * to the Bazaar options. Without a limit on how many Bazaar items you run, that is a linear programme with two shared
+ * resources (coins and anvil time), solved exactly: best return per coin first, with anvil time priced in until the crafts
+ * fit it. With the item limit it tries a few dozen shortlists, from "most profit per hour" to "most profit per coin" and
+ * "most profit per combine", and keeps the best.
  */
 public final class OpportunityAdvisor {
     /**
      * purse: coins you can put to work; +infinity means no limit (ForgeCalc.budget gives that when the purse filter is off
      * or the purse is unknown). maxActive: how many Bazaar items you'll run at once (each needs a buy order and a sell
-     * offer). afk: plan for time away, so only passive options (forges) count.
+     * offer). afk: plan for time away, so only passive options (forges) count. labourPerHour: anvil combines you'll do in an
+     * hour online for book crafts (+infinity: no limit).
      */
-    public record Settings(double purse, int forgeSlots, int maxActive, boolean afk) {
+    public record Settings(double purse, int forgeSlots, int maxActive, boolean afk, double labourPerHour) {
         public Settings {
             if (Double.isNaN(purse)) purse = Double.POSITIVE_INFINITY;
             purse = Math.max(0, purse);
             forgeSlots = Math.max(0, forgeSlots);
             maxActive = Math.max(0, maxActive);
+            if (Double.isNaN(labourPerHour)) labourPerHour = Double.POSITIVE_INFINITY;
+            labourPerHour = Math.max(0, labourPerHour);
+        }
+
+        /** No limit on anvil time. */
+        public Settings(double purse, int forgeSlots, int maxActive, boolean afk) {
+            this(purse, forgeSlots, maxActive, afk, Double.POSITIVE_INFINITY);
         }
 
         public boolean purseLimited() {
             return purse != Double.POSITIVE_INFINITY;
+        }
+
+        public boolean labourLimited() {
+            return labourPerHour != Double.POSITIVE_INFINITY;
         }
     }
 
@@ -42,16 +56,24 @@ public final class OpportunityAdvisor {
     public record Skip(Opportunity opportunity, String why) { }
 
     /**
-     * The plan: forge picks, then Bazaar picks, the totals, plain-text summary lines, the best options left out, and how many
-     * forge slot assignments were scored (the search's cost).
+     * The plan: forge picks, then Bazaar picks, the totals (anvil combines per hour included), plain-text summary lines, the
+     * best options left out, and how many forge slot assignments were scored (the search's cost).
      */
     public record Plan(List<Pick> forges, List<Pick> active, double profitPerHour, double passivePerHour, double capitalUsed,
-                       int slotsUsed, Settings settings, List<String> summary, List<Skip> skipped, int assignmentsTried) { }
+                       int slotsUsed, double labourUsed, Settings settings, List<String> summary, List<Skip> skipped,
+                       int assignmentsTried) {
+        /** Anvil time is what stops the crafts: all of it planned (or none allowed). */
+        public boolean labourBinding() {
+            return settings.labourLimited() && labourUsed >= settings.labourPerHour() * (1 - 1e-9);
+        }
+    }
 
     /** Forge routes searched from each angle (best per slot, best per coin); the union is at most twice this. */
     static final int FORGE_POOL_EACH = 5;
     /** Capital prices tried when choosing which Bazaar options share a limited number of picks. */
     static final int MAX_CAPITAL_PRICES = 32;
+    /** Anvil-time prices tried alongside each capital price (only when anvil time is limited and some option needs it). */
+    static final int MAX_LABOUR_PRICES = 6;
     /** Best options left out that the plan explains. */
     static final int SKIPS_SHOWN = 5;
 
@@ -75,7 +97,7 @@ public final class OpportunityAdvisor {
             }
         }
 
-        ActiveChooser chooser = new ActiveChooser(active, s.maxActive());
+        ActiveChooser chooser = new ActiveChooser(active, s.maxActive(), s.labourPerHour());
         List<Opportunity> pool = forgePool(forges, s.forgeSlots());
         Search search = new Search(pool, s, chooser);
         search.run(0, s.forgeSlots(), 0, 0);
@@ -98,10 +120,11 @@ public final class OpportunityAdvisor {
         List<Pick> activePicks = new ArrayList<>();
         double activeProfit = chooser.fill(search.bestSet, s.purse() - forgeCapital, activePicks);
         double activeCapital = activePicks.stream().mapToDouble(Pick::capital).sum();
+        double labour = activePicks.stream().mapToDouble(x -> x.unitsPerHour() * x.opportunity().labour()).sum();
 
         Plan draft = new Plan(forgePicks, activePicks, passive + activeProfit, passive, forgeCapital + activeCapital, slotsUsed,
-                s, List.of(), List.of(), search.tried);
-        return new Plan(forgePicks, activePicks, draft.profitPerHour(), passive, draft.capitalUsed(), slotsUsed, s,
+                labour, s, List.of(), List.of(), search.tried);
+        return new Plan(forgePicks, activePicks, draft.profitPerHour(), passive, draft.capitalUsed(), slotsUsed, labour, s,
                 summary(draft, forges, active), skips(draft, valid), search.tried);
     }
 
@@ -148,7 +171,7 @@ public final class OpportunityAdvisor {
         final ActiveChooser chooser;
         final int[] counts, bestCounts;
         double best = Double.NEGATIVE_INFINITY;
-        List<Opportunity> bestSet = List.of();
+        ActiveChooser.Shortlist bestSet;
         int tried;
 
         Search(List<Opportunity> pool, Settings s, ActiveChooser chooser) {
@@ -189,59 +212,223 @@ public final class OpportunityAdvisor {
     // ---- Bazaar side ----
 
     /**
-     * Picks which Bazaar options get the coins. For a set of options the best use of a budget is to fill them in order of
-     * return per coin, each up to its market's limit. Which set: with no cap on how many, every option (exact). With a cap of
-     * k, the sets tried are the top k by (profit - price * capital) per hour for a range of capital prices: price 0 is "most
-     * profit per hour", high prices favour profit per coin. The sets don't depend on the budget, so they're built once.
+     * Picks which Bazaar options get the coins and the anvil time. For a set of options and a budget, the best use of the
+     * coins alone is to fill them in order of return per coin, each up to its market's limit. When the crafts in it need
+     * more anvil combines than you have, anvil time gets a price: each craft's return per coin drops by price x combines, and
+     * at a high enough price the crafts that earn least per combine drop out. Between two prices where the order changes the
+     * fill stays the same, so a binary search over those break points finds the two fills either side of your anvil time;
+     * the mix of them that uses exactly all of it is the optimum (a linear programme with two shared resources).
+     *
+     * <p>Which set: with no cap on how many, every option (exact). With a cap of k, the sets tried are the top k by
+     * (profit - price * capital - labour price * combines) per hour for a range of capital and labour prices: both at 0 is
+     * "most profit per hour", a high capital price favours profit per coin, a high labour price favours what needs no anvil.
+     * The sets don't depend on the budget, so they're built once.
      */
     static final class ActiveChooser {
-        record Best(List<Opportunity> set, double profit) { }
+        record Best(Shortlist set, double profit) { }
 
-        final List<List<Opportunity>> sets = new ArrayList<>();
-        /** How many capital prices were tried: each one sorts every option, so this is the chooser's cost. */
-        int pricesTried;
+        /** A set of options, best return per coin first, and the anvil-time prices where its best fill order changes. */
+        static final class Shortlist {
+            final List<Opportunity> options;
+            final boolean needsLabour;
+            private double[] breaks;
 
-        ActiveChooser(List<Opportunity> active, int k) {
-            if (active.isEmpty() || k <= 0) return;
-            double[] returns = active.stream().mapToDouble(Opportunity::returnPerCoinHour).sorted().distinct().toArray();
-            List<Double> prices = new ArrayList<>();
-            prices.add(0.0);
-            int step = Math.max(1, (int) Math.ceil(returns.length / (double) (MAX_CAPITAL_PRICES - 1)));
-            for (int i = 0; i < returns.length; i += step) prices.add(returns[i]);
-            pricesTried = prices.size();
-            for (double price : prices) {
-                List<Opportunity> set = active.stream().filter(o -> net(o, price) > 0)
-                        .sorted(Comparator.comparingDouble((Opportunity o) -> net(o, price)).reversed().thenComparing(Opportunity::id))
-                        .limit(k).sorted(BY_RETURN_PER_COIN).toList();
-                if (!set.isEmpty() && !sets.contains(set)) sets.add(set);
+            Shortlist(List<Opportunity> options) {
+                this.options = options;
+                this.needsLabour = options.stream().anyMatch(o -> o.labour() > 0);
+            }
+
+            private double returnPerCoin(int i) {
+                return options.get(i).returnPerCoinHour();
+            }
+
+            private double labourPerCoin(int i) {
+                Opportunity o = options.get(i);
+                return o.labour() / o.capitalPerRate();
+            }
+
+            /**
+             * Anvil-time prices (coins per combine) where the order changes, ascending: a craft's profit per combine (past it,
+             * the craft loses money) and where two options' returns per coin, net of the price, cross.
+             */
+            double[] breaks() {
+                if (breaks != null) return breaks;
+                List<Double> out = new ArrayList<>();
+                int n = options.size();
+                for (int i = 0; i < n; i++) {
+                    Opportunity o = options.get(i);
+                    if (o.labour() > 0) out.add(o.expectedProfit() / o.labour());
+                    for (int j = i + 1; j < n; j++) {
+                        double db = labourPerCoin(i) - labourPerCoin(j);
+                        if (db == 0) continue;
+                        double price = (returnPerCoin(i) - returnPerCoin(j)) / db;
+                        if (price > 0 && Double.isFinite(price)) out.add(price);
+                    }
+                }
+                breaks = out.stream().mapToDouble(Double::doubleValue).sorted().distinct().toArray();
+                return breaks;
+            }
+
+            /** A labour price inside interval t: 0 for the first, past every break for the last. */
+            double priceIn(int t) {
+                double[] b = breaks();
+                if (t == 0) return 0;
+                return t < b.length ? (b[t - 1] + b[t]) / 2 : 2 * b[b.length - 1];
+            }
+
+            /** Fill order at this labour price: best return per coin net of anvil time first; whatever stops paying is left out. */
+            int[] order(double price) {
+                List<Integer> idx = new ArrayList<>();
+                for (int i = 0; i < options.size(); i++) if (returnPerCoin(i) - price * labourPerCoin(i) > 0) idx.add(i);
+                if (price > 0) {
+                    idx.sort(Comparator.comparingDouble((Integer i) -> returnPerCoin(i) - price * labourPerCoin(i)).reversed()
+                            .thenComparing(i -> -options.get(i).perHourAtLimit()).thenComparing(i -> options.get(i).id()));
+                }
+                return idx.stream().mapToInt(Integer::intValue).toArray();
             }
         }
 
-        private static double net(Opportunity o, double price) {
-            return (o.expectedProfit() - price * o.capitalPerRate()) * o.maxPerHour();
+        final List<Shortlist> sets = new ArrayList<>();
+        final double labourCap;
+        /** How many (capital, labour) prices were tried: each one sorts every option, so this is the chooser's cost to build. */
+        int pricesTried;
+        /** Fills computed so far: the chooser's cost per budget. */
+        long passes;
+        private boolean memoSet;
+        private double memoBudget;
+        private Best memo;
+
+        ActiveChooser(List<Opportunity> active, int k, double labourCap) {
+            this.labourCap = labourCap;
+            if (active.isEmpty() || k <= 0) return;
+            double[] returns = active.stream().mapToDouble(Opportunity::returnPerCoinHour).sorted().distinct().toArray();
+            List<Double> prices = spread(returns, MAX_CAPITAL_PRICES);
+            List<Double> labourPrices = List.of(0.0);
+            if (Double.isFinite(labourCap)) {
+                labourPrices = spread(active.stream().filter(o -> o.labour() > 0).mapToDouble(o -> o.expectedProfit() / o.labour())
+                        .sorted().distinct().toArray(), MAX_LABOUR_PRICES);
+            }
+            pricesTried = prices.size() * labourPrices.size();
+            Set<List<Opportunity>> seen = new HashSet<>();
+            for (double price : prices) {
+                for (double labourPrice : labourPrices) {
+                    List<Opportunity> set = active.stream().filter(o -> net(o, price, labourPrice) > 0)
+                            .sorted(Comparator.comparingDouble((Opportunity o) -> net(o, price, labourPrice)).reversed()
+                                    .thenComparing(Opportunity::id))
+                            .limit(k).sorted(BY_RETURN_PER_COIN).toList();
+                    if (!set.isEmpty() && seen.add(set)) sets.add(new Shortlist(set));
+                }
+            }
+        }
+
+        /** 0, then up to max - 1 of the values spread evenly through them. */
+        private static List<Double> spread(double[] sorted, int max) {
+            List<Double> out = new ArrayList<>();
+            out.add(0.0);
+            int step = Math.max(1, (int) Math.ceil(sorted.length / (double) (max - 1)));
+            for (int i = 0; i < sorted.length; i += step) out.add(sorted[i]);
+            return out;
+        }
+
+        private double net(Opportunity o, double price, double labourPrice) {
+            double rate = o.labour() > 0 ? Math.min(o.maxPerHour(), labourCap / o.labour()) : o.maxPerHour();
+            return (o.expectedProfit() - price * o.capitalPerRate() - labourPrice * o.labour()) * rate;
         }
 
         Best best(double budget) {
-            Best best = new Best(List.of(), 0);
-            for (List<Opportunity> set : sets) {
-                double p = fill(set, budget, null);
+            if (memoSet && Double.compare(budget, memoBudget) == 0) return memo; // e.g. every assignment with no purse limit
+            Best best = new Best(null, 0);
+            for (Shortlist set : sets) {
+                double p = profit(set, rates(set, budget));
                 if (p > best.profit() * (1 + 1e-12) + 1e-9) best = new Best(set, p);
             }
+            memoSet = true;
+            memoBudget = budget;
+            memo = best;
             return best;
         }
 
-        /** Fills the set best return per coin first, each up to its market's limit; adds the picks to out if given. */
-        double fill(List<Opportunity> set, double budget, List<Pick> out) {
-            double left = budget, profit = 0;
-            for (Opportunity o : set) {
+        /** Units per hour for each option of the set: best return per coin first, anvil time priced in if it runs short. */
+        double[] rates(Shortlist s, double budget) {
+            double[] x = pass(s, s.order(0), budget);
+            if (!s.needsLabour || !(labour(s, x) > labourCap)) return x;
+            // interval lo uses more anvil time than you have; the last interval, past every craft's profit per combine, uses none
+            double[] b = s.breaks();
+            int lo = 0, hi = b.length;
+            double[] over = x, fits = pass(s, s.order(s.priceIn(hi)), budget);
+            while (hi - lo > 1) {
+                int mid = (lo + hi) >>> 1;
+                double[] m = pass(s, s.order(s.priceIn(mid)), budget);
+                if (labour(s, m) > labourCap) {
+                    lo = mid;
+                    over = m;
+                } else {
+                    hi = mid;
+                    fits = m;
+                }
+            }
+            // both fills are best at the labour price between them; the mix that uses exactly your anvil time is best overall
+            double lOver = labour(s, over), lFits = labour(s, fits);
+            double t = (labourCap - lFits) / (lOver - lFits);
+            double[] mix = new double[x.length];
+            for (int i = 0; i < mix.length; i++) mix[i] = t * over[i] + (1 - t) * fits[i];
+            if (capital(s, mix) > budget) {
+                // a whole unit costs its coins however slowly it runs: drop what the mix runs below one unit
+                for (int i = 0; i < mix.length; i++) {
+                    Opportunity o = s.options.get(i);
+                    if (mix[i] > 0 && mix[i] * o.capitalPerRate() < o.unitCost()) mix[i] = 0;
+                }
+            }
+            return mix;
+        }
+
+        /** Fills in this order, each up to its market's limit, while the coins last. */
+        private double[] pass(Shortlist s, int[] order, double budget) {
+            passes++;
+            double[] x = new double[s.options.size()];
+            double left = budget;
+            for (int i : order) {
+                Opportunity o = s.options.get(i);
                 if (!(left >= o.unitCost())) continue; // can't afford one unit; a cheaper one further down still might
                 double rate = Math.min(o.maxPerHour(), left / o.capitalPerRate());
-                double capital = Math.max(o.unitCost(), rate * o.capitalPerRate());
-                left -= capital;
-                profit += rate * o.expectedProfit();
-                if (out != null) out.add(new Pick(o, rate, 0, capital, rate * o.expectedProfit(), activeWhy(o, rate, capital)));
+                left -= Math.max(o.unitCost(), rate * o.capitalPerRate());
+                x[i] = rate;
             }
-            return profit;
+            return x;
+        }
+
+        private static double labour(Shortlist s, double[] x) {
+            double sum = 0;
+            for (int i = 0; i < x.length; i++) sum += x[i] * s.options.get(i).labour();
+            return sum;
+        }
+
+        private static double capital(Shortlist s, double[] x) {
+            double sum = 0;
+            for (int i = 0; i < x.length; i++) {
+                if (x[i] > 0) sum += Math.max(s.options.get(i).unitCost(), x[i] * s.options.get(i).capitalPerRate());
+            }
+            return sum;
+        }
+
+        private static double profit(Shortlist s, double[] x) {
+            double sum = 0;
+            for (int i = 0; i < x.length; i++) sum += x[i] * s.options.get(i).expectedProfit();
+            return sum;
+        }
+
+        /** The set's fill for this budget as picks, best return per coin first; returns the expected profit per hour. */
+        double fill(Shortlist s, double budget, List<Pick> out) {
+            if (s == null) return 0;
+            double[] x = rates(s, budget);
+            boolean labourShort = Double.isFinite(labourCap) && labour(s, x) >= labourCap * (1 - 1e-9);
+            for (int i = 0; i < x.length; i++) {
+                if (!(x[i] > 0)) continue;
+                Opportunity o = s.options.get(i);
+                double capital = Math.max(o.unitCost(), x[i] * o.capitalPerRate());
+                out.add(new Pick(o, x[i], 0, capital, x[i] * o.expectedProfit(), activeWhy(o, x[i], capital, labourShort, labourCap)));
+            }
+            return profit(s, x);
         }
     }
 
@@ -254,18 +441,27 @@ public final class OpportunityAdvisor {
                 .append(coins(rate * o.unitProfit())).append("/hr. Ties up ").append(coins(capital)).append(" (")
                 .append(hours(o.holdHours())).append(" from buying parts to sale). Keeps running while you're AFK.");
         if (rate < n / o.slotHours() * (1 - 1e-9)) {
-            sb.append(" Its market takes only ~").append(perDay(o.maxPerHour())).append(" a day, so more slots wouldn't add anything.");
+            sb.append(o.share() < 1 ? " Your ~" + percent(o.share()) + " of its market takes only ~" : " Its market takes only ~")
+                    .append(perDay(o.maxPerHour())).append(" a day, so more slots wouldn't add anything.");
         }
         appendDoubts(sb, o, profit);
         return sb.toString();
     }
 
-    private static String activeWhy(Opportunity o, double rate, double capital) {
+    private static String activeWhy(Opportunity o, double rate, double capital, boolean labourShort, double labourCap) {
         StringBuilder sb = new StringBuilder();
         sb.append(o.how()).append(". ").append(coins(o.unitProfit())).append(" each x ").append(perDay(rate)).append("/day = ")
                 .append(coins(rate * o.unitProfit())).append("/hr on ").append(coins(capital)).append(" of your purse (back in ~")
                 .append(hours(o.holdHours())).append("), ").append(coins(o.returnPerCoinHour() * 1e6)).append("/hr per 1M tied up.");
-        sb.append(rate >= o.maxPerHour() * (1 - 1e-9) ? " That's all its market trades." : " More would need more purse.");
+        if (o.labour() > 0) {
+            sb.append(' ').append(amount(o.labour())).append(" anvil combines each: ").append(amount(rate * o.labour()))
+                    .append(Double.isFinite(labourCap) ? " of your " + amount(labourCap) + " combines/hr." : " combines/hr.");
+        }
+        if (rate >= o.maxPerHour() * (1 - 1e-9)) {
+            sb.append(o.share() < 1 ? " That's your ~" + percent(o.share()) + " of what its market trades." : " That's all its market trades.");
+        } else {
+            sb.append(labourShort && o.labour() > 0 ? " More would need more anvil time." : " More would need more purse.");
+        }
         appendDoubts(sb, o, rate * o.expectedProfit());
         return sb.toString();
     }
@@ -307,6 +503,9 @@ public final class OpportunityAdvisor {
             List<String> names = new ArrayList<>();
             for (Pick a : p.active()) names.add(a.opportunity().name());
             lines.add("Put " + coins(capital) + " into " + join(names) + ": " + coins(activeProfit) + "/hr while you're online.");
+            if (s.labourLimited() && p.labourUsed() > 0) {
+                lines.add("Anvil: " + amount(p.labourUsed()) + " of your " + amount(s.labourPerHour()) + " combines/hr go to book crafts.");
+            }
         } else if (s.maxActive() == 0) {
             lines.add("Bazaar: off (0 items at once).");
         } else if (!active.isEmpty()) {
@@ -335,9 +534,15 @@ public final class OpportunityAdvisor {
         if (slotsFull && (s.afk() || active.isEmpty() || s.maxActive() == 0)) {
             return "every forge slot is busy" + (s.afk() ? " and the Bazaar waits until you're back" : "");
         }
-        boolean activeCapped = p.active().stream().allMatch(OpportunityAdvisor::atMarketLimit);
+        boolean labourShort = p.labourBinding();
+        boolean activeCapped = p.active().stream().allMatch(x -> atMarketLimit(x) || labourShort && x.opportunity().labour() > 0);
         boolean forgeCapped = p.forges().stream().allMatch(OpportunityAdvisor::atMarketLimit);
         if (activeCapped && (slotsFull || forgeCapped)) {
+            if (labourShort) {
+                boolean others = p.active().stream().anyMatch(x -> x.opportunity().labour() == 0);
+                return "your " + amount(s.labourPerHour()) + " anvil combines/hr are used up"
+                        + (others ? " and the other picks' markets can't take more" : "");
+            }
             return slotsFull && !forgeCapped ? "every forge slot is busy and the Bazaar picks' markets can't take more"
                     : "the picks' markets can't take more";
         }
@@ -361,6 +566,8 @@ public final class OpportunityAdvisor {
         double lowestPickedReturn = p.active().stream().mapToDouble(x -> x.opportunity().returnPerCoinHour()).min().orElse(0);
         double lowestReturnOfAll = Math.min(lowestPickedReturn == 0 ? Double.POSITIVE_INFINITY : lowestPickedReturn,
                 p.forges().stream().mapToDouble(x -> x.opportunity().returnPerCoinHour()).min().orElse(Double.POSITIVE_INFINITY));
+        double lowestPickedPerCombine = p.active().stream().filter(x -> x.opportunity().labour() > 0)
+                .mapToDouble(x -> x.opportunity().expectedProfit() / x.opportunity().labour()).min().orElse(Double.POSITIVE_INFINITY);
         List<Skip> out = new ArrayList<>();
         for (Opportunity o : valid.stream().sorted(Comparator.comparingDouble(Opportunity::perHourAtLimit).reversed()).toList()) {
             if (out.size() >= SKIPS_SHOWN) break;
@@ -378,6 +585,11 @@ public final class OpportunityAdvisor {
                 } else why = "ties up too much purse for what it earns (" + coins(o.returnPerCoinHour() * 1e6) + "/hr per 1M)";
             } else if (s.afk()) {
                 why = "needs you online to keep its orders on top";
+            } else if (o.labour() > 0 && s.labourPerHour() == 0) {
+                why = "needs anvil time, and yours is set to 0 combines/hr";
+            } else if (o.labour() > 0 && p.labourBinding() && o.expectedProfit() / o.labour() <= lowestPickedPerCombine) {
+                why = "needs " + amount(o.labour()) + " anvil combines each (" + coins(o.expectedProfit() / o.labour())
+                        + " per combine); your " + amount(s.labourPerHour()) + " combines/hr earn more on the picked crafts";
             } else if (p.active().size() >= s.maxActive() && o.returnPerCoinHour() >= lowestPickedReturn) {
                 why = "you're already running " + s.maxActive() + " Bazaar items that earn more together";
             } else if (o.unitCost() > s.purse()) {
@@ -385,7 +597,8 @@ public final class OpportunityAdvisor {
             } else {
                 why = "earns " + coins(o.returnPerCoinHour() * 1e6) + "/hr per 1M tied up; your purse does better in the picks";
             }
-            out.add(new Skip(o, o.kind().label + " " + o.name() + " (" + coins(o.perHourAtLimit()) + "/hr at its market's limit): " + why));
+            out.add(new Skip(o, o.kind().label + " " + o.name() + " (" + coins(o.perHourAtLimit())
+                    + (o.share() < 1 ? "/hr at your ~" + percent(o.share()) + " of its market): " : "/hr at its market's limit): ") + why));
         }
         return out;
     }
@@ -410,8 +623,18 @@ public final class OpportunityAdvisor {
     }
 
     static String perDay(double perHour) {
-        double d = perHour * 24;
-        return d >= 10 ? String.format("%.0f", d) : String.format("%.1f", d);
+        return amount(perHour * 24);
+    }
+
+    /** A count: whole above 10, one decimal below. */
+    static String amount(double v) {
+        return v >= 10 ? String.format("%.0f", v) : String.format("%.1f", v);
+    }
+
+    /** 0.075 -> "7.5%", 0.05 -> "5%". */
+    static String percent(double fraction) {
+        String s = String.format("%.1f", fraction * 100);
+        return (s.endsWith(".0") ? s.substring(0, s.length() - 2) : s) + "%";
     }
 
     private static String join(List<String> parts) {
