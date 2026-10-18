@@ -148,7 +148,27 @@ public class FlipHud {
         return text + "..";
     }
 
-    private record Row(String title, double perHour, String line2, String line3) { }
+    private record Row(String title, double perHour, String line2, String line3, String name) { }
+
+    // ---- search within the current mode ----
+
+    private static final String[] MODE_NOUN = {"flips", "dips", "fusions", "forge items"};
+    private static final String[] queries = {"", "", "", ""};
+
+    /** The search typed for a list mode ("" = none). */
+    public static String query(int mode) {
+        return queries[mode];
+    }
+
+    public static void setQuery(int mode, String text) {
+        String q = text == null ? "" : text.trim();
+        if (!q.equals(queries[mode])) scroll = 0;
+        queries[mode] = q;
+    }
+
+    private static int cap() {
+        return Math.max(1, cfgInt("bazaarGuiTopItemsByPercentageCount") + cfgInt("bazaarGuiTopItemsByMoneyCount"));
+    }
 
     /** BazaarFlip's flips (or dips) plus book crafting flips, in one list ranked by profit per hour. */
     private static List<Row> rows(int mode) {
@@ -157,30 +177,44 @@ public class FlipHud {
             ForgeCalc.refreshIfStale();
             int slots = BaseProfit.getForgeSlots();
             List<ForgeCalc.Row> forge = ForgeCalc.get();
-            for (ForgeCalc.Row f : forge) {
+            String q = queries[3];
+            List<FlipSearch.ForgeHit> hits = FlipSearch.blank(q)
+                    ? forge.stream().map(f -> new FlipSearch.ForgeHit(f, null)).toList()
+                    : FlipSearch.forge(q, forge, ForgeCalc::name);
+            hits = hits.subList(0, Math.min(hits.size(), cap()));
+            List<ForgeCalc.Row> shown = new ArrayList<>();
+            for (FlipSearch.ForgeHit hit : hits) {
+                ForgeCalc.Row f = hit.row();
+                shown.add(f);
                 ForgePlanner.Route r = f.route();
-                out.add(new Row(ForgeCalc.name(r.id()) + (f.soldOnAh() ? " §6[forge, AH]" : " §6[forge]"), f.perHour(),
+                String uses = hit.usedPart() == null ? "" : " §3[uses " + ForgeCalc.name(hit.usedPart()) + "]";
+                out.add(new Row(ForgeCalc.name(r.id()) + (f.soldOnAh() ? " §6[forge, AH]" : " §6[forge]") + uses, f.perHour(),
                         "§7" + r.forgeSteps() + (r.forgeSteps() == 1 ? " forge, §r" : " forges, §r") + ForgeCalc.duration(r.slotSeconds())
                                 + "§7 slot time, done in ~§r" + ForgeCalc.duration(r.hoursWith(slots) * 3600)
                                 + "§7, limit: §r" + ForgeCalc.limitText(f, slots, false),
                         "§aSell §r" + coins(r.revenue()) + " §7- Cost §r" + coins(r.cost()) + " §7= §6" + coins(r.profit())
-                                + " §e" + coins(f.perDay()) + "/day"));
+                                + " §e" + coins(f.perDay()) + "/day", ForgeCalc.name(r.id())));
             }
-            int cap = Math.max(1, cfgInt("bazaarGuiTopItemsByPercentageCount") + cfgInt("bazaarGuiTopItemsByMoneyCount"));
-            forgeRowsShown = forge.subList(0, Math.min(forge.size(), cap)); // same order as the rows drawn
-            return out.size() > cap ? new ArrayList<>(out.subList(0, cap)) : out;
+            forgeRowsShown = shown; // same order as the rows drawn, so a click opens the tree of the row it hit
+            return out;
         }
         if (mode == 2) {
             FusionCalc.refreshIfStale();
-            for (FusionCalc.Fusion f : FusionCalc.get()) {
+            String q = queries[2];
+            List<FlipSearch.FusionHit> hits = FlipSearch.blank(q)
+                    ? FusionCalc.get().stream().map(f -> new FlipSearch.FusionHit(f, null)).toList()
+                    : FlipSearch.fusions(q, FusionCalc.getAll(), ItemNames::of);
+            for (FlipSearch.FusionHit hit : hits.subList(0, Math.min(hits.size(), cap()))) {
+                FusionCalc.Fusion f = hit.fusion();
+                String tag = hit.relation() == null ? "§7" : hit.relation() == FlipSearch.Relation.MAKES ? "§b[makes] §7" : "§3[uses] §7";
                 out.add(new Row(f.outputCount() + "x " + ItemNames.of(f.output()) + " §d[" + f.type().toLowerCase() + "]", f.perHour(),
-                        "§7" + f.leftCount() + "x " + shardName(f.left()) + " + " + f.rightCount() + "x " + shardName(f.right()),
+                        tag + f.leftCount() + "x " + shardName(f.left()) + " + " + f.rightCount() + "x " + shardName(f.right()),
                         // whole-fusion totals: everything you sell (after tax) minus everything you buy
                         "§aSell §r" + coins(f.cost() + f.profit()) + " §7- Cost §r" + coins(f.cost())
-                                + " §7= §6" + coins(f.profit()) + " §e(" + String.format("%.0f", f.profit() / f.cost() * 100) + "%)"));
+                                + " §7= §6" + coins(f.profit()) + " §e(" + String.format("%.0f", f.profit() / f.cost() * 100) + "%)",
+                        ItemNames.of(f.output())));
             }
-            int cap = Math.max(1, cfgInt("bazaarGuiTopItemsByPercentageCount") + cfgInt("bazaarGuiTopItemsByMoneyCount"));
-            return out.size() > cap ? new ArrayList<>(out.subList(0, cap)) : out;
+            return out;
         }
         boolean dips = mode == 1;
         for (Object it : items()) {
@@ -195,19 +229,20 @@ public class FlipHud {
                 }
             }
             out.add(new Row(ItemNames.of(id), d(it, "totalProfit"),
-                    "§7Buy: §r" + coins(d(it, "buyPrice")) + " §7| §aSell: §r" + coins(d(it, "sellPrice")), third));
+                    "§7Buy: §r" + coins(d(it, "buyPrice")) + " §7| §aSell: §r" + coins(d(it, "sellPrice")), third, ItemNames.of(id)));
         }
         if (!dips) {
             BookCraft.refreshIfStale();
             for (BookCraft.Craft c : BookCraft.get()) {
                 out.add(new Row(c.title() + " §d[craft]", c.perHour(),
                         "§7Buy §r" + c.units() + "x " + c.fromName() + " §7@ §r" + coins(c.bid()) + " §7| §aSell: §r" + coins(c.ask()),
-                        "§6Profit: §r" + coins(c.profit()) + " §e(" + String.format("%.1f", c.profitMargin()) + "%) §7Cost: §r" + coins(c.cost())));
+                        "§6Profit: §r" + coins(c.profit()) + " §e(" + String.format("%.1f", c.profitMargin()) + "%) §7Cost: §r" + coins(c.cost()),
+                        c.title() + " " + c.fromName()));
             }
         }
         out.sort((a, b) -> Double.compare(b.perHour(), a.perHour()));
-        int cap = Math.max(1, cfgInt("bazaarGuiTopItemsByPercentageCount") + cfgInt("bazaarGuiTopItemsByMoneyCount"));
-        return out.size() > cap ? new ArrayList<>(out.subList(0, cap)) : out;
+        String q = queries[mode];
+        return FlipSearch.top(out, r -> FlipSearch.matches(q, r.name()), cap());
     }
 
     // ---- rendering (called from the patched HudRenderer.renderOverlay) ----
@@ -286,14 +321,17 @@ public class FlipHud {
             case 3 -> ForgeCalc.filterTag().isEmpty() ? "§l§6Forge Flips (Profit/hr)" : "§l§6Forge Flips§r" + ForgeCalc.filterTag();
             default -> "§l§eBazaar Flips (Profit/hr)";
         };
-        g.text(font, heading, x + 6, y + 7, textColor, true);
+        String q = queries[mode];
+        if (!q.isEmpty()) heading += " §r§7\"" + q + "\"";
+        String range = items.isEmpty() ? "" : (scroll + 1) + "-" + (scroll + visible) + " / " + items.size();
+        g.text(font, fit(font, heading, WIDTH - 16 - font.width(range)), x + 6, y + 7, textColor, true);
         if (!items.isEmpty()) {
-            String range = (scroll + 1) + "-" + (scroll + visible) + " / " + items.size();
             g.text(font, "§7" + range, x + WIDTH - 6 - font.width(range), y + 7, textColor, true);
         }
 
         if (items.isEmpty()) {
-            g.text(font, "§7No active flips found.", x + 6, y + TITLE_H + 8, textColor, true);
+            g.text(font, q.isEmpty() ? "§7No active flips found." : fit(font, "§7No " + MODE_NOUN[mode] + " matching \"" + q + "\".", WIDTH - 12),
+                    x + 6, y + TITLE_H + 8, textColor, true);
         } else {
             for (int i = 0; i < visible; i++) {
                 int idx = scroll + i;
@@ -398,6 +436,74 @@ public class FlipHud {
                     ForgeTreeScreen.open(shown.get(index));
                     return false; // handled: don't also click whatever is behind the panel
                 }));
+    }
+
+    /**
+     * A search field above the list (below it if there's no room) in every inventory-style screen while the list is on
+     * screen. While it has focus it takes every key, so typing E or Y doesn't close the inventory or switch modes; Esc or a
+     * click elsewhere leaves it.
+     */
+    @RunOnInit
+    public static void registerSearchBox() {
+        ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
+            if (!(screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)) return;
+            net.minecraft.client.gui.components.EditBox box = new net.minecraft.client.gui.components.EditBox(
+                    client.font, 0, 0, 120, 14, net.minecraft.network.chat.Component.literal("Search"));
+            box.setMaxLength(40);
+            box.visible = false;
+            int[] boxMode = {-1};
+            box.setResponder(text -> {
+                if (boxMode[0] >= 0) setQuery(boxMode[0], text);
+            });
+            net.fabricmc.fabric.api.client.screen.v1.Screens.getWidgets(screen).add(box);
+            ScreenEvents.beforeExtract(screen).register((s, g, mouseX, mouseY, delta) -> {
+                boolean shown = System.currentTimeMillis() - lastRenderMs < 500 && boundsRight > boundsLeft;
+                box.visible = shown;
+                if (!shown) {
+                    box.setFocused(false);
+                    return;
+                }
+                if (boxMode[0] != lastMode) { // the list switched mode: show that mode's search
+                    boxMode[0] = -1;
+                    box.setValue(queries[lastMode]);
+                    box.setHint(net.minecraft.network.chat.Component.literal("Search " + MODE_NOUN[lastMode] + "..."));
+                    boxMode[0] = lastMode;
+                }
+                box.setWidth(boundsRight - boundsLeft);
+                box.setX(boundsLeft);
+                box.setY(boundsTop >= 16 ? boundsTop - 15 : boundsBottom + 2);
+            });
+            ScreenKeyboardEvents.allowKeyPress(screen).register((s, key) -> {
+                if (!box.visible || !box.isFocused()) return true;
+                if (key.key() == GLFW.GLFW_KEY_ESCAPE) {
+                    box.setFocused(false);
+                    s.setFocused(null);
+                } else {
+                    box.keyPressed(key);
+                }
+                return false; // the field has it: not the inventory key, the mode key or anything else
+            });
+            ScreenMouseEvents.allowMouseClick(screen).register((s, click) -> {
+                if (box.isFocused() && !box.isMouseOver(click.x(), click.y())) box.setFocused(false);
+                return true;
+            });
+        });
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, buildContext) ->
+                dispatcher.register(ClientCommands.literal("flipsearch")
+                        .executes(ctx -> {
+                            int mode = BaseProfit.getListMode();
+                            setQuery(mode, "");
+                            PlayerActionUtil.notifyAll("Search cleared (" + MODE_NOUN[mode] + ").");
+                            return 1;
+                        })
+                        .then(ClientCommands.argument("text", com.mojang.brigadier.arguments.StringArgumentType.greedyString())
+                                .executes(ctx -> {
+                                    int mode = BaseProfit.getListMode();
+                                    setQuery(mode, com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "text"));
+                                    PlayerActionUtil.notifyAll("Searching " + MODE_NOUN[mode] + " for \"" + queries[mode]
+                                            + "\". /flipsearch on its own clears it.");
+                                    return 1;
+                                }))));
     }
 
     @RunOnInit

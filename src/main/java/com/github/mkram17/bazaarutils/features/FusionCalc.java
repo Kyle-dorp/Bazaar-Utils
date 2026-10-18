@@ -141,9 +141,10 @@ public class FusionCalc {
             if (ask[k] > 0) askOk[k] = BaseProfit.priceOk(ids[k], ask[k], true);
         }
 
-        // best recipe per output by profit per hour
+        // best recipe per output by profit per hour; every profitable recipe is kept too, for searching by shard
         Map<Integer, int[]> bestRecipe = new HashMap<>();
         Map<Integer, double[]> bestNumbers = new HashMap<>();
+        List<Fusion> every = new ArrayList<>();
         for (int[] r : recipes) {
             int l = r[1], lc = r[2], rt = r[3], rc = r[4], o = r[5], oc = r[6];
             if (bid[l] <= 0 || bid[rt] <= 0 || ask[o] <= 0) continue;
@@ -154,6 +155,7 @@ public class FusionCalc {
             double fusionsPerHour = Math.min(Math.min(fill[l] / lc, fill[rt] / rc), sell[o] / oc);
             if (fusionsPerHour * oc < minRate || fusionsPerHour <= 0) continue;
             double perHour = profit * fusionsPerHour;
+            every.add(new Fusion(types[r[0]], ids[l], lc, bid[l], ids[rt], rc, bid[rt], ids[o], oc, ask[o], cost, profit, perHour));
             double[] prev = bestNumbers.get(o);
             if (prev == null || perHour > prev[2]) {
                 bestRecipe.put(o, r);
@@ -169,6 +171,15 @@ public class FusionCalc {
                     ids[r[5]], r[6], ask[r[5]], v[0], v[1], v[2]));
         }
         out.sort((a, b) -> Double.compare(b.perHour(), a.perHour()));
+        every.sort((a, b) -> Double.compare(b.perHour(), a.perHour()));
+        allFusions = every;
         return out;
+    }
+
+    private static volatile List<Fusion> allFusions = List.of();
+
+    /** Every profitable recipe from the last refresh (not just the best per output), best profit per hour first. */
+    public static List<Fusion> getAll() {
+        return allFusions;
     }
 }

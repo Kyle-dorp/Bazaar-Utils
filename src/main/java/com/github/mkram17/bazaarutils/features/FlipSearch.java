@@ -1,0 +1,91 @@
+package com.github.mkram17.bazaarutils.features;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Function;
+import java.util.function.Predicate;
+
+/**
+ * Searching the flip list within its current mode. Matching is a loose "contains" on in-game names (case, item icons and
+ * stars ignored), and always runs over the full computed list, so the best matches show up even if they'd be cut by the
+ * row limit. Pure logic, no Minecraft classes, so it can be unit tested.
+ *
+ * <ul>
+ *   <li>Flips, dips, book crafts: rows whose name matches.</li>
+ *   <li>Fusions: every profitable recipe that makes the shard you typed, then every one that uses it as an input.</li>
+ *   <li>Forge: the item's own best route if it's forgeable, plus every forge recipe that takes it as a direct part (what you
+ *   could forge it into), with that recipe's route and profit.</li>
+ * </ul>
+ */
+final class FlipSearch {
+    private FlipSearch() { }
+
+    /** True if {@code name} contains {@code query}, ignoring case, icons and stars. A blank query matches everything. */
+    static boolean matches(String query, String name) {
+        String q = ProfitLedger.norm(query);
+        return q.isEmpty() || ProfitLedger.norm(name).contains(q);
+    }
+
+    static boolean blank(String query) {
+        return ProfitLedger.norm(query).isEmpty();
+    }
+
+    /** The first {@code cap} rows that pass {@code keep}, in order: filtering happens before the cap, never after. */
+    static <T> List<T> top(List<T> all, Predicate<T> keep, int cap) {
+        List<T> out = new ArrayList<>();
+        for (T t : all) {
+            if (out.size() >= cap) break;
+            if (keep.test(t)) out.add(t);
+        }
+        return out;
+    }
+
+    // ---- fusions ----
+
+    enum Relation { MAKES, USES }
+
+    record FusionHit(FusionCalc.Fusion fusion, Relation relation) { }
+
+    /**
+     * Every recipe in {@code all} whose output matches (MAKES), then every one with a matching input (USES), each group best
+     * profit per hour first. {@code name} turns a shard id into its in-game name.
+     */
+    static List<FusionHit> fusions(String query, List<FusionCalc.Fusion> all, Function<String, String> name) {
+        List<FusionHit> makes = new ArrayList<>(), uses = new ArrayList<>();
+        for (FusionCalc.Fusion f : all) {
+            if (matches(query, name.apply(f.output()))) makes.add(new FusionHit(f, Relation.MAKES));
+            else if (matches(query, name.apply(f.left())) || matches(query, name.apply(f.right()))) uses.add(new FusionHit(f, Relation.USES));
+        }
+        makes.sort((a, b) -> Double.compare(b.fusion().perHour(), a.fusion().perHour()));
+        uses.sort((a, b) -> Double.compare(b.fusion().perHour(), a.fusion().perHour()));
+        makes.addAll(uses);
+        return makes;
+    }
+
+    // ---- forge ----
+
+    /** A forge row found by a search: {@code usedPart} is the matching part it consumes, or null if the item itself matched. */
+    record ForgeHit(ForgeCalc.Row row, String usedPart) { }
+
+    /**
+     * Rows for items whose name matches, then rows whose recipe takes a matching part directly ("used in"), each group in
+     * the order given (best first). {@code name} turns an item id into its in-game name.
+     */
+    static List<ForgeHit> forge(String query, List<ForgeCalc.Row> rows, Function<String, String> name) {
+        List<ForgeHit> self = new ArrayList<>(), usedIn = new ArrayList<>();
+        for (ForgeCalc.Row row : rows) {
+            if (matches(query, name.apply(row.route().id()))) {
+                self.add(new ForgeHit(row, null));
+                continue;
+            }
+            for (String part : row.recipe().inputs().keySet()) {
+                if (matches(query, name.apply(part))) {
+                    usedIn.add(new ForgeHit(row, part));
+                    break;
+                }
+            }
+        }
+        self.addAll(usedIn);
+        return self;
+    }
+}
