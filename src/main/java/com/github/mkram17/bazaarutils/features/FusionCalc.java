@@ -58,32 +58,55 @@ public class FusionCalc {
     /** A recipe as display names, for matching against what the flip tracker saw you buy. */
     public record NamedRecipe(String left, int leftCount, String right, int rightCount, String output, int outputCount) { }
 
-    /** Every wiki recipe that makes the shard with this display name (e.g. "Hideoncave Shard"). */
-    /** Every wiki fusion recipe as display names. */
-    public static List<NamedRecipe> allNamedRecipes() {
+    private static volatile Map<String, List<FusionPotential.Recipe>> byInput;
+
+    /** Every recipe by shard id, indexed under both of its input shards. Built once. */
+    private static synchronized Map<String, List<FusionPotential.Recipe>> recipesByInput() {
+        if (byInput != null) return byInput;
         loadRecipes();
-        List<NamedRecipe> out = new ArrayList<>();
+        Map<String, List<FusionPotential.Recipe>> index = new HashMap<>();
         for (int[] r : recipes) {
-            out.add(new NamedRecipe(ItemNames.of(ids[r[1]]), r[2], ItemNames.of(ids[r[3]]), r[4], ItemNames.of(ids[r[5]]), r[6]));
+            FusionPotential.Recipe recipe = new FusionPotential.Recipe(ids[r[1]], r[2], ids[r[3]], r[4], ids[r[5]], r[6]);
+            index.computeIfAbsent(recipe.left(), k -> new ArrayList<>()).add(recipe);
+            if (!recipe.right().equals(recipe.left())) index.computeIfAbsent(recipe.right(), k -> new ArrayList<>()).add(recipe);
         }
-        return out;
+        byInput = index;
+        return index;
+    }
+
+    /** Recipes whose two input shards are both among {@code held} (each recipe once): the only ones you could do. */
+    public static List<FusionPotential.Recipe> recipesUsing(Set<String> held) {
+        Map<String, List<FusionPotential.Recipe>> index = recipesByInput();
+        Set<FusionPotential.Recipe> out = new LinkedHashSet<>();
+        for (String shard : held) {
+            for (FusionPotential.Recipe r : index.getOrDefault(shard, List.of())) {
+                if (held.contains(r.left()) && held.contains(r.right())) out.add(r);
+            }
+        }
+        return new ArrayList<>(out);
     }
 
     /**
-     * What one shard with this display name sells for with a sell offer after tax, from the last Bazaar snapshot (no
-     * network); NaN if unknown.
+     * Shard prices from the last Bazaar snapshot, without touching the network: a shard you hold is worth its top buy order,
+     * an output sells at the lowest sell offer after tax (the same basis as the fusion list). NaN if unknown.
      */
-    public static double sellValueByName(String name, double taxFraction) {
-        loadRecipes();
+    public static FusionPotential.Prices cachedPrices(double taxFraction) {
         JsonObject products = BazaarSnapshot.cachedProducts();
-        if (products == null) return Double.NaN;
-        String wanted = ProfitLedger.norm(name);
-        for (String id : ids) {
-            if (!ProfitLedger.norm(ItemNames.of(id)).equals(wanted) || !products.has(id)) continue;
-            double ask = BazaarSnapshot.ask(products.getAsJsonObject(id));
-            return ask > 0 ? ask * (1 - taxFraction) : Double.NaN;
-        }
-        return Double.NaN;
+        return new FusionPotential.Prices() {
+            @Override
+            public double input(String id) {
+                if (products == null || !products.has(id)) return Double.NaN;
+                double bid = BazaarSnapshot.bid(products.getAsJsonObject(id));
+                return bid > 0 ? bid : Double.NaN;
+            }
+
+            @Override
+            public double output(String id) {
+                if (products == null || !products.has(id)) return Double.NaN;
+                double ask = BazaarSnapshot.ask(products.getAsJsonObject(id));
+                return ask > 0 ? ask * (1 - taxFraction) : Double.NaN;
+            }
+        };
     }
 
     public static List<NamedRecipe> recipesMaking(String outputName) {

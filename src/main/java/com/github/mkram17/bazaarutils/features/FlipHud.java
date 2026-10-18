@@ -347,29 +347,53 @@ public class FlipHud {
         return name.endsWith(" Shard") ? name.substring(0, name.length() - 6) : name;
     }
 
-    /** Under the fusion list in the Fusion Box: what the shards you already hold could make, over what they cost you. */
+    private static final int POTENTIAL_ROWS = 15;
+    private static int potentialScroll;
+    // last drawn bounds of the potential panel in screen pixels, for scrolling it
+    private static volatile int potLeft, potTop, potRight, potBottom;
+
+    /**
+     * Under the fusion list in the Fusion Box: the fusions you could do with the shards actually in your Hunting Box (SkyHanni's
+     * counts), each shard used once across the whole list, most profit first. Up to 15 rows, scroll for more. The plan is
+     * computed in the background ({@link ShardPotential}); this only draws it.
+     */
     static void renderFusionPotential(GuiGraphicsExtractor g) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || boundsRight <= boundsLeft) return;
         Font font = mc.font;
         float s = scale();
-        FusionPotential.Plan plan = FlipTracker.fusionPotential();
-        List<String> lines = new ArrayList<>();
-        lines.add("§l§dPotential from shards you hold");
-        if (plan.fusions().isEmpty()) {
-            lines.add("§7Nothing profitable from your tracked shards.");
-        } else {
-            for (int i = 0; i < Math.min(5, plan.fusions().size()); i++) {
-                FusionPotential.Fusion f = plan.fusions().get(i);
-                FusionCalc.NamedRecipe r = f.recipe();
-                lines.add("§a+" + coins(f.profit()) + " §7" + f.times() + "x §f" + shardLabel(r.output()) + " §8("
-                        + r.leftCount() + " " + shardLabel(r.left()) + " + " + r.rightCount() + " " + shardLabel(r.right()) + ")");
+        FusionPotential.Plan plan = ShardPotential.get();
+        List<String> head = new ArrayList<>(), rows = new ArrayList<>();
+        head.add("§l§dFuse your Hunting Box §r§8(SkyHanni counts)");
+        switch (ShardPotential.source()) {
+            case NO_SKYHANNI -> head.add("§7Needs SkyHanni to read your Hunting Box.");
+            case NOT_SEEN_YET -> head.add("§7Open your Hunting Box once so SkyHanni can count it.");
+            default -> {
+                if (ShardPotential.pricesLoading()) head.add("§7Loading prices...");
+                else if (plan.fusions().isEmpty()) head.add("§7Nothing profitable to fuse from what you have.");
             }
-            int more = plan.fusions().size() - 5;
-            lines.add("§7Total §6+" + coins(plan.total()) + (more > 0 ? " §8(+" + more + " more)" : ""));
+        }
+        for (FusionPotential.Fusion f : plan.fusions()) {
+            FusionPotential.Recipe r = f.recipe();
+            rows.add("§a+" + coins(f.profit()) + " §7" + f.times() + "x §f" + shardLabel(ItemNames.of(r.output())) + " §8("
+                    + r.leftCount() * f.times() + " " + shardLabel(ItemNames.of(r.left())) + " + "
+                    + r.rightCount() * f.times() + " " + shardLabel(ItemNames.of(r.right())) + ")");
         }
         int x = Math.round(boundsLeft / s), y = Math.round((boundsBottom + 4) / s);
+        int screenRows = (int) ((mc.getWindow().getGuiScaledHeight() / s - y - 8 - (head.size() + 2) * 11) / 11);
+        int visible = Math.max(0, Math.min(POTENTIAL_ROWS, Math.min(rows.size(), screenRows)));
+        potentialScroll = Math.max(0, Math.min(potentialScroll, rows.size() - visible));
+        List<String> lines = new ArrayList<>(head);
+        for (int i = 0; i < visible; i++) lines.add(rows.get(potentialScroll + i));
+        if (!rows.isEmpty()) {
+            lines.add("§7Total §6+" + coins(plan.total()) + " §8- uses " + plan.shardsUsed() + " of your " + plan.shardsHeld() + " shards");
+            if (rows.size() > visible) lines.add("§8" + (potentialScroll + 1) + "-" + (potentialScroll + visible) + " of " + rows.size() + ", scroll for more");
+        }
         int height = 8 + lines.size() * 11;
+        potLeft = boundsLeft;
+        potTop = boundsBottom + 4;
+        potRight = boundsRight;
+        potBottom = potTop + Math.round(height * s);
         g.pose().pushMatrix();
         g.pose().scale(s, s);
         g.fill(x, y, x + WIDTH, y + height, cfgColor("getBackgroundColor", 0xB0101018));
@@ -481,6 +505,10 @@ public class FlipHud {
     public static void registerScroll() {
         ScreenEvents.AFTER_INIT.register((client, screen, w, h) ->
                 ScreenMouseEvents.allowMouseScroll(screen).register((s, mouseX, mouseY, horizontal, vertical) -> {
+                    if (potRight > potLeft && mouseX >= potLeft && mouseX <= potRight && mouseY >= potTop && mouseY <= potBottom) {
+                        potentialScroll = Math.max(0, potentialScroll - (int) Math.signum(vertical));
+                        return false; // scrolls the potential-fusions list, not the inventory
+                    }
                     boolean over = mouseX >= boundsLeft && mouseX <= boundsRight && mouseY >= boundsTop && mouseY <= boundsBottom;
                     if (!over || boundsRight <= boundsLeft) return true;
                     scroll = Math.max(0, scroll - (int) Math.signum(vertical));

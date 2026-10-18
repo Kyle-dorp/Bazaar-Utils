@@ -94,7 +94,6 @@ public class FlipTracker {
 
     private static void changed() {
         cachedAt = 0;
-        potentialAt = 0;
         save();
     }
 
@@ -197,26 +196,6 @@ public class FlipTracker {
         cachedLines = lines;
         cachedAt = now;
         return lines;
-    }
-
-    // ---- potential fusions (shown while the Fusion Box is open) ----
-
-    private static volatile FusionPotential.Plan potential = new FusionPotential.Plan(List.of(), 0);
-    private static volatile long potentialAt;
-
-    /** Fusions you could do with the shards you hold (tracked buys and fusions), at what they cost you; every 2 seconds. */
-    public static FusionPotential.Plan fusionPotential() {
-        long now = System.currentTimeMillis();
-        if (now - potentialAt < 2000) return potential;
-        Map<String, double[]> held = new HashMap<>();
-        for (var e : replay().stock().entrySet()) {
-            double qty = e.getValue().qty();
-            if (qty > 1e-9) held.put(e.getKey(), new double[]{qty, e.getValue().cost()});
-        }
-        double tax = BaseProfit.getTaxPercent() / 100.0;
-        potential = FusionPotential.plan(held, FusionCalc.allNamedRecipes(), name -> FusionCalc.sellValueByName(name, tax));
-        potentialAt = now;
-        return potential;
     }
 
     /** Opens the flip settings screen, which shows the profit summary on the side (kept out of chat). */
