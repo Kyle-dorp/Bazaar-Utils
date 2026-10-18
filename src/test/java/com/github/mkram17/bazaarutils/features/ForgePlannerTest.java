@@ -314,13 +314,16 @@ class ForgePlannerTest {
 
     private record Option(double coins, double slotSeconds) { }
 
+    /** Recipes the player hasn't unlocked: the brute force never forges these. */
+    private final Set<String> locked = new HashSet<>();
+
     /** Every way to obtain {@code qty} of {@code id}: buy it, or forge it with every combination of ways to get its parts. */
     private List<Option> allOptions(String id, double qty, boolean mustForge, Set<String> stack) {
         List<Option> out = new ArrayList<>();
         Double b = buy.get(id);
         if (!mustForge && b != null && b > 0) out.add(new Option(qty * b, 0));
         Recipe r = recipes.get(id);
-        if (r == null || stack.contains(id)) return out;
+        if (r == null || stack.contains(id) || locked.contains(id)) return out;
         double forges = qty / r.count();
         List<Option> combos = List.of(new Option(forges * r.coins(), forges * r.seconds()));
         stack.add(id);
@@ -347,29 +350,34 @@ class ForgePlannerTest {
         return best;
     }
 
+    /** A random recipe tree rooted at I0 (fills recipes, buy and sell). */
+    private void randomTree(Random rnd, double[] durations) {
+        recipes.clear();
+        buy.clear();
+        sell.clear();
+        int n = 4 + rnd.nextInt(3); // up to 6 items: every-combination enumeration explodes past that
+        for (int k = 0; k < n; k++) {
+            String id = "I" + k;
+            // items only use higher-numbered items, so the tree has no loops but parts can be shared
+            if (k == 0 || (k < n - 1 && rnd.nextDouble() < 0.7)) {
+                Map<String, Double> in = new LinkedHashMap<>();
+                int parts = 1 + rnd.nextInt(2);
+                for (int p = 0; p < parts; p++) in.merge("I" + (k + 1 + rnd.nextInt(n - k - 1)), 1.0 + rnd.nextInt(3), Double::sum);
+                double coins = rnd.nextDouble() < 0.2 ? 1000 * rnd.nextInt(50) : 0;
+                recipes.put(id, new Recipe(id, rnd.nextDouble() < 0.15 ? 2 : 1, durations[rnd.nextInt(durations.length)], coins, in));
+            }
+            if (k > 0 && rnd.nextDouble() < 0.85) buy.put(id, 100.0 + rnd.nextInt(100_000));
+        }
+        sell.put("I0", 1000.0 + rnd.nextInt(400_000));
+    }
+
     @Test
     void plannerMatchesTryingEveryCombinationOnRandomTrees() {
         Random rnd = new Random(20261015);
         double[] durations = {30, 600, HOUR, 6 * HOUR, 10 * HOUR, 30 * HOUR};
         int profitable = 0;
         for (int trial = 0; trial < 500; trial++) {
-            recipes.clear();
-            buy.clear();
-            sell.clear();
-            int n = 4 + rnd.nextInt(3); // up to 6 items: every-combination enumeration explodes past that
-            for (int k = 0; k < n; k++) {
-                String id = "I" + k;
-                // items only use higher-numbered items, so the tree has no loops but parts can be shared
-                if (k == 0 || (k < n - 1 && rnd.nextDouble() < 0.7)) {
-                    Map<String, Double> in = new LinkedHashMap<>();
-                    int parts = 1 + rnd.nextInt(2);
-                    for (int p = 0; p < parts; p++) in.merge("I" + (k + 1 + rnd.nextInt(n - k - 1)), 1.0 + rnd.nextInt(3), Double::sum);
-                    double coins = rnd.nextDouble() < 0.2 ? 1000 * rnd.nextInt(50) : 0;
-                    recipes.put(id, new Recipe(id, rnd.nextDouble() < 0.15 ? 2 : 1, durations[rnd.nextInt(durations.length)], coins, in));
-                }
-                if (k > 0 && rnd.nextDouble() < 0.85) buy.put(id, 100.0 + rnd.nextInt(100_000));
-            }
-            sell.put("I0", 1000.0 + rnd.nextInt(400_000));
+            randomTree(rnd, durations);
 
             Route r = best("I0");
             double expected = bruteForceBestRate("I0");
@@ -382,5 +390,119 @@ class ForgePlannerTest {
             }
         }
         assertTrue(profitable > 100, "fixture should exercise plenty of profitable trees, got " + profitable);
+    }
+
+    // ---- unlocks and purse ----
+
+    /** Forging the plate is the better route, but you haven't unlocked it: buy it and the drill is still worth forging. */
+    @Test
+    void aPartYouHaventUnlockedIsBoughtInstead() {
+        recipe("DRILL", 30, 0, "PLATE", 1, "PART", 1);
+        recipe("PLATE", 30, 0, "RAW", 2);
+        sell.put("DRILL", 200.0);
+        buy.put("PART", 50.0);
+        buy.put("PLATE", 100.0);
+        buy.put("RAW", 10.0);
+
+        assertTrue(part(best("DRILL").tree(), "PLATE").forged(), "unlocked: forge the plate");
+        Route locked = new ForgePlanner(recipes, prices(), 1.0, 0, id -> !id.equals("PLATE")).best("DRILL");
+        assertFalse(part(locked.tree(), "PLATE").forged(), "locked: buy the plate");
+        assertEquals(50, locked.profit(), 1e-9);
+    }
+
+    @Test
+    void anItemYouCantForgeHasNoRoute() {
+        recipe("DRILL", 30, 0, "PART", 1);
+        sell.put("DRILL", 200.0);
+        buy.put("PART", 50.0);
+        ForgePlanner planner = new ForgePlanner(recipes, prices(), 1.0, 0, id -> !id.equals("DRILL"));
+        assertNull(planner.best("DRILL"));
+        assertTrue(planner.rankAll().isEmpty());
+    }
+
+    /**
+     * Buying the plate is the best rate (150 up front); forging it is cheaper in coins (70) but takes 6 hours. With 100 in
+     * your purse you get the route you can afford; with 60 there is none.
+     */
+    @Test
+    void aRouteOverYourPurseFallsBackToOneThatFits() {
+        recipe("DRILL", 30, 0, "PLATE", 1, "PART", 1);
+        recipe("PLATE", 6 * HOUR, 0, "RAW", 2);
+        sell.put("DRILL", 200.0);
+        buy.put("PART", 50.0);
+        buy.put("PLATE", 100.0);
+        buy.put("RAW", 10.0);
+        ForgePlanner planner = new ForgePlanner(recipes, prices(), 1.0);
+
+        Route rich = planner.best("DRILL", 1000);
+        assertEquals(150, rich.cost(), 1e-9);
+        assertFalse(part(rich.tree(), "PLATE").forged());
+
+        Route tight = planner.best("DRILL", 100);
+        assertEquals(70, tight.cost(), 1e-9, "only the forge-the-plate route fits");
+        assertTrue(part(tight.tree(), "PLATE").forged());
+
+        assertNull(planner.best("DRILL", 60), "not even the cheapest route fits");
+        assertTrue(planner.rankAll(60).isEmpty());
+        assertEquals(1, planner.rankAll(100).size());
+    }
+
+    private void assertNoLockedForge(Step s, String context) {
+        if (!s.forged()) return;
+        assertFalse(locked.contains(s.id()), context + ": forged " + s.id() + " which is locked");
+        for (Step p : s.parts()) assertNoLockedForge(p, context);
+    }
+
+    /** Random trees with random locked recipes and random budgets, checked against every make-or-buy combination. */
+    @Test
+    void unlocksAndPurseMatchTryingEveryCombinationOnRandomTrees() {
+        Random rnd = new Random(20261017);
+        double[] durations = {30, 600, HOUR, 6 * HOUR, 10 * HOUR, 30 * HOUR};
+        int fitted = 0, none = 0, fellBack = 0;
+        for (int trial = 0; trial < 3000; trial++) { // few random trees have a best route dearer than the cheapest one
+            randomTree(rnd, durations);
+            locked.clear();
+            for (String id : recipes.keySet()) if (rnd.nextDouble() < 0.25) locked.add(id);
+            String context = "trial " + trial + " locked " + locked;
+            double revenue = sell.get("I0") * recipes.get("I0").count();
+            List<Option> options = allOptions("I0", 1, true, new HashSet<>());
+            double minCost = options.stream().mapToDouble(Option::coins).min().orElse(Double.POSITIVE_INFINITY);
+
+            ForgePlanner planner = new ForgePlanner(recipes, prices(), 1.0, 0, id -> !locked.contains(id));
+            Route unlimited = planner.best("I0");
+            // budgets aimed at each case: between the cheapest route and the optimum (fall back), around the cheapest, anything
+            double pick = rnd.nextDouble(), budget;
+            if (pick < 0.4 && unlimited != null && unlimited.cost() > minCost) {
+                budget = minCost + (unlimited.cost() - minCost) * rnd.nextDouble();
+            } else if (pick < 0.7 && minCost < Double.POSITIVE_INFINITY) {
+                budget = minCost * (0.5 + rnd.nextDouble());
+            } else {
+                budget = 100 + rnd.nextInt(400_000);
+            }
+            double optimum = bruteForceBestRate("I0");
+            if (Double.isNaN(optimum)) assertNull(unlimited, context + ": nothing profitable");
+            else assertEquals(optimum, unlimited.profitPerSlotHour(), Math.abs(optimum) * 1e-9, context + ": unlimited optimum");
+
+            Route r = planner.best("I0", budget);
+            if (options.isEmpty() || minCost >= revenue || minCost > budget) {
+                assertNull(r, context + ": no profitable route fits " + budget);
+                none++;
+                continue;
+            }
+            assertNotNull(r, context + ": the cheapest route fits " + budget);
+            fitted++;
+            assertTrue(r.cost() <= budget * (1 + 1e-12), context + ": over budget");
+            assertNoLockedForge(r.tree(), context);
+            double bestFitting = options.stream().filter(o -> o.coins() <= budget && o.coins() < revenue)
+                    .mapToDouble(o -> (revenue - o.coins()) / (o.slotSeconds() / HOUR)).max().getAsDouble();
+            assertTrue(r.profitPerSlotHour() <= bestFitting * (1 + 1e-9), context + ": better than any route that fits");
+            if (unlimited.cost() <= budget) {
+                assertEquals(unlimited.profitPerSlotHour(), r.profitPerSlotHour(), Math.abs(optimum) * 1e-9, context + ": optimum fits");
+            } else {
+                fellBack++;
+            }
+        }
+        assertTrue(fitted > 100 && none > 20 && fellBack > 10,
+                "fixture should cover all three cases, got fitted " + fitted + ", none " + none + ", fell back " + fellBack);
     }
 }

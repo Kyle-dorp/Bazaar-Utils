@@ -168,6 +168,7 @@ public class ForgeTreeScreen extends Screen {
             String text = s.forged()
                     ? "§aForge §f" + ForgeCalc.qty(s.quantity()) + "x " + ForgeCalc.name(s.id()) + "  §7" + ForgeCalc.duration(s.secondsPerForge())
                     + (s.forges() > 1 ? " §8x" + ForgeCalc.qty(s.forges()) : "")
+                    + (ForgeCalc.requirement(s.id()).hotm() > 0 ? " §3HotM " + ForgeCalc.requirement(s.id()).hotm() : "")
                     : "§eBuy §f" + ForgeCalc.qty(s.quantity()) + "x " + ForgeCalc.name(s.id()) + " §8@ " + FlipHud.coins(s.coins() / s.quantity())
                     + " §7= §f" + FlipHud.coins(s.coins());
             g.text(font, fit(font, text, maxW - (x - x0) - 20), x + 19, y + 5, 0xFFFFFFFF, true);

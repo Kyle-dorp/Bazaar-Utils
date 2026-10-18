@@ -13,6 +13,11 @@ public class BazaarSnapshot {
     private static JsonObject products;
     private static long fetchedAt;
 
+    /** The last fetched products without fetching (null if never fetched): for code that must not wait on the network. */
+    public static synchronized JsonObject cachedProducts() {
+        return products;
+    }
+
     public static synchronized JsonObject products() throws Exception {
         long now = System.currentTimeMillis();
         if (products == null || now - fetchedAt > MAX_AGE_MS) {

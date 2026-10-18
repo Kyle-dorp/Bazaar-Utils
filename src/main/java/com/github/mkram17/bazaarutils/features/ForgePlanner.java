@@ -50,6 +50,7 @@ public final class ForgePlanner {
     private final Prices prices;
     private final double timeFactor;
     private final double checkInSeconds;
+    private final java.util.function.Predicate<String> canForge;
 
     /** timeFactor scales every forge duration, e.g. 0.7 with 30% Quick Forge. */
     public ForgePlanner(Map<String, Recipe> recipes, Prices prices, double timeFactor) {
@@ -61,10 +62,20 @@ public final class ForgePlanner {
      * slot until it is collected, so a 30-second forge started before logging off for 4 hours costs 4 slot-hours.
      */
     public ForgePlanner(Map<String, Recipe> recipes, Prices prices, double timeFactor, double checkInSeconds) {
+        this(recipes, prices, timeFactor, checkInSeconds, id -> true);
+    }
+
+    /**
+     * canForge says which recipes you have unlocked (e.g. your HotM tier). A part you can't forge is bought instead, so the
+     * route adapts; an item you can't forge at all has no route.
+     */
+    public ForgePlanner(Map<String, Recipe> recipes, Prices prices, double timeFactor, double checkInSeconds,
+                        java.util.function.Predicate<String> canForge) {
         this.recipes = recipes;
         this.prices = prices;
         this.timeFactor = timeFactor;
         this.checkInSeconds = Math.max(0, checkInSeconds);
+        this.canForge = canForge;
     }
 
     /** How long one forge of this recipe holds a slot: its (Quick Forge) duration, or until your next check-in if that's later. */
@@ -74,9 +85,14 @@ public final class ForgePlanner {
 
     /** Every recipe that can be forged at a profit, best profit per slot-hour first. */
     public List<Route> rankAll() {
+        return rankAll(Double.POSITIVE_INFINITY);
+    }
+
+    /** Every recipe with a profitable route costing at most {@code maxCost} up front, best profit per slot-hour first. */
+    public List<Route> rankAll(double maxCost) {
         List<Route> out = new ArrayList<>();
         for (String id : recipes.keySet()) {
-            Route r = best(id);
+            Route r = best(id, maxCost);
             if (r != null) out.add(r);
         }
         out.sort((a, b) -> Double.compare(b.profitPerSlotHour(), a.profitPerSlotHour()));
@@ -85,27 +101,49 @@ public final class ForgePlanner {
 
     /** The route with the highest profit per slot-hour for forging {@code id}, or null if it can't be forged at a profit. */
     public Route best(String id) {
+        return best(id, Double.POSITIVE_INFINITY);
+    }
+
+    /**
+     * Like {@link #best(String)}, limited to routes whose up-front cost (parts bought plus forge coin fees) is at most
+     * {@code maxCost}, e.g. your purse. The first Dinkelbach step is the cheapest route in coins, so null means not even that
+     * one fits. Otherwise this is the best-rate route that fits among the steps taken, which is the true optimum whenever
+     * the optimum itself fits.
+     */
+    public Route best(String id, double maxCost) {
         Recipe root = recipes.get(id);
-        if (root == null) return null;
+        if (root == null || !canForge.test(id)) return null;
         double sell = prices.sell(id);
         if (!(sell > 0)) return null;
         double revenue = sell * root.count();
 
         double lambda = 0;
-        Route bestRoute = null;
+        Route bestRoute = null, affordable = null;
         for (int i = 0; i < MAX_ITERATIONS; i++) {
             Route candidate = route(root, revenue, lambda);
-            if (candidate == null || !(candidate.profit() > 0)) return bestRoute;
+            if (candidate == null || !(candidate.profit() > 0)) break;
             double rate = candidate.profit() / candidate.slotSeconds();
             if (bestRoute != null && rate <= lambda * (1 + 1e-12)) {
                 // no route beats the current rate: optimal. An equally good route that uses less slot time wins the tie.
                 if (rate >= lambda * (1 - 1e-12) && candidate.slotSeconds() < bestRoute.slotSeconds()) bestRoute = candidate;
+                affordable = better(affordable, candidate, maxCost);
                 break;
             }
             bestRoute = candidate;
+            affordable = better(affordable, candidate, maxCost);
             lambda = rate;
         }
-        return bestRoute;
+        return maxCost == Double.POSITIVE_INFINITY ? bestRoute : affordable;
+    }
+
+    /** The better of two routes that fit the budget: higher rate, then less slot time. */
+    private static Route better(Route current, Route candidate, double maxCost) {
+        if (candidate.cost() > maxCost) return current;
+        if (current == null) return candidate;
+        double a = current.profitPerSlotHour(), b = candidate.profitPerSlotHour();
+        if (b > a * (1 + 1e-12)) return candidate;
+        if (b >= a * (1 - 1e-12) && candidate.slotSeconds() < current.slotSeconds()) return candidate;
+        return current;
     }
 
     /**
@@ -249,7 +287,7 @@ public final class ForgePlanner {
     /** Cost per unit of forging it yourself at rate lambda (infinite if there's no recipe or it would loop back on itself). */
     private double makeUnitCost(String id, double lambda, Map<String, Double> memo, Set<String> stack) {
         Recipe r = recipes.get(id);
-        if (r == null || stack.contains(id)) return Double.POSITIVE_INFINITY;
+        if (r == null || stack.contains(id) || !canForge.test(id)) return Double.POSITIVE_INFINITY;
         Double cached = memo.get(id);
         if (cached != null) return cached;
         stack.add(id);

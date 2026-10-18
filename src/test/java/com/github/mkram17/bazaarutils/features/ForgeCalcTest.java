@@ -155,4 +155,88 @@ class ForgeCalcTest {
         assertEquals("Mithril Drill SX-R326", ForgeCalc.name("MITHRIL_DRILL_2"));
         assertEquals("Divan's Drill", ForgeCalc.name("DIVAN_DRILL"));
     }
+
+    // ---- unlocks and purse ----
+
+    @Test
+    void bundledRecipesCarryTheirHotmTierAndCollection() {
+        assertEquals(3, ForgeCalc.requirement("MITHRIL_DRILL_2").hotm());
+        assertNull(ForgeCalc.requirement("MITHRIL_DRILL_2").collection());
+        assertEquals(new ForgeCalc.Requirement(5, "Gemstone X"), ForgeCalc.requirement("PERFECT_AMBER_GEM"));
+        assertEquals(new ForgeCalc.Requirement(7, "Tungsten III"), ForgeCalc.requirement("REFINED_TUNGSTEN"));
+        assertEquals(new ForgeCalc.Requirement(4, null), ForgeCalc.requirement("AMMONITE;4"));
+        assertEquals(0, ForgeCalc.requirement("NOT_A_FORGE_ITEM").hotm(), "unknown items need nothing");
+    }
+
+    @Test
+    void yourHotmTierUnlocksRecipesAtOrBelowIt() {
+        var hotm3 = ForgeCalc.unlockedAt(3);
+        assertTrue(hotm3.test("MITHRIL_DRILL_2"), "HotM 3 recipe at HotM 3");
+        assertTrue(hotm3.test("GOLDEN_PLATE"), "HotM 2 recipe at HotM 3");
+        assertFalse(hotm3.test("PERFECT_AMBER_GEM"), "HotM 5 recipe at HotM 3");
+        assertFalse(hotm3.test("DIVAN_DRILL"), "HotM 7 recipe at HotM 3");
+        assertTrue(ForgeCalc.unlockedAt(0).test("CRYSTAL_HOLLOWS_TRAVEL_SCROLL"), "no listed tier: always allowed");
+        assertTrue(ForgeCalc.unlockedAt(10).test("DIVAN_DRILL"));
+    }
+
+    @Test
+    void thePurseOnlyLimitsRoutesWhenTheFilterIsOnAndThePurseIsKnown() {
+        assertEquals(Double.POSITIVE_INFINITY, ForgeCalc.budget(false, 5_000_000), "filter off");
+        assertEquals(5_000_000, ForgeCalc.budget(true, 5_000_000), 1e-9);
+        assertEquals(Double.POSITIVE_INFINITY, ForgeCalc.budget(true, -1), "no purse line on the sidebar");
+        assertEquals(Double.POSITIVE_INFINITY, ForgeCalc.budget(true, Double.NaN), "no sidebar at all");
+    }
+
+    private static ForgePlanner.Step forged(String id, ForgePlanner.Step... parts) {
+        return new ForgePlanner.Step(id, 1, true, 1, 60, 0, 60, 60, List.of(parts));
+    }
+
+    private static ForgePlanner.Step bought(String id) {
+        return new ForgePlanner.Step(id, 1, false, 0, 0, 100, 0, 0, List.of());
+    }
+
+    /** The route needs the highest tier among the parts you forge; parts you buy don't count. */
+    @Test
+    void aRoutesRequirementsComeFromWhatYouForge() {
+        var tree = forged("MITHRIL_DRILL_2", forged("PERFECT_AMBER_GEM"), forged("GOLDEN_PLATE"), bought("DIVAN_DRILL"));
+        assertEquals("HotM 5, Gemstone X", ForgeCalc.requirementText(tree));
+        assertEquals("HotM 3", ForgeCalc.requirementText(forged("MITHRIL_DRILL_2", forged("GOLDEN_PLATE"))));
+        assertEquals("nothing", ForgeCalc.requirementText(forged("CRYSTAL_HOLLOWS_TRAVEL_SCROLL", bought("GOLDEN_PLATE"))));
+    }
+
+    /** rank() hands the unlock check and the purse to the planner: locked items and routes over budget drop out. */
+    @Test
+    void rankLeavesOutLockedItemsAndRoutesOverYourPurse() {
+        var recipes = oneRecipe("UPGRADE", 30, "PART");
+        Map<String, Double> lbin = Map.of("UPGRADE", 9_000_000.0, "PART", 1_000_000.0);
+        JsonObject products = new JsonObject();
+        var prices = ForgeCalc.prices(products, lbin, Map.of(), 0.0125, (i, p, a) -> true);
+        java.util.function.ToDoubleFunction<String> sales = id -> 100;
+
+        assertEquals(1, ForgeCalc.rank(recipes, prices, products, lbin, Map.of(), sales, 7, 1.0, 0, 0, id -> true, 2_000_000).size());
+        assertTrue(ForgeCalc.rank(recipes, prices, products, lbin, Map.of(), sales, 7, 1.0, 0, 0, id -> true, 500_000).isEmpty(),
+                "the part costs 1M, the purse holds 500K");
+        assertTrue(ForgeCalc.rank(recipes, prices, products, lbin, Map.of(), sales, 7, 1.0, 0, 0, id -> false,
+                Double.POSITIVE_INFINITY).isEmpty(), "can't forge it");
+    }
+
+    // ---- recognising forge items you sell ----
+
+    /** Sold names come with reforges, stars, levels and icons; the forge item is whichever name the sold name ends with. */
+    @Test
+    void aSoldItemIsMatchedToItsForgeRecipeThroughReforgesAndStars() {
+        assertEquals("TITANIUM_DRILL_2", ForgeCalc.forgeOutputFor("Fleet Titanium Drill DR-X455 ✪✪"));
+        assertEquals("TITANIUM_DRILL_2", ForgeCalc.forgeOutputFor("Titanium Drill DR-X455"));
+        assertEquals("REFINED_MITHRIL", ForgeCalc.forgeOutputFor("Refined Mithril"));
+        assertEquals("MITHRIL_PLATE", ForgeCalc.forgeOutputFor("Mithril Plate"));
+        assertEquals("AMMONITE;4", ForgeCalc.forgeOutputFor("[Lvl 1] Ammonite"));
+    }
+
+    @Test
+    void itemsThatAreNotForgedAreNotMatched() {
+        assertNull(ForgeCalc.forgeOutputFor("Enchanted Coal"));
+        assertNull(ForgeCalc.forgeOutputFor("Plate"), "a bare word is not a forge item");
+        assertNull(ForgeCalc.forgeOutputFor("Mithril"), "a part of a name is not enough");
+    }
 }
+

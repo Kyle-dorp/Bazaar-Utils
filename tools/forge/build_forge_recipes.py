@@ -53,6 +53,27 @@ for item_id, d in sorted(items.items()):
 referenced = {r['id'] for r in recipes} | {i for r in recipes for i in r['inputs']}
 names = {i: clean_name(items[i]['displayname']) for i in sorted(referenced) if i in items and items[i].get('displayname')}
 
+
+def requirement(text):
+    """NEU's crafttext on a forge output, e.g. "Requires: Gemstone X & HotM 5" -> {"hotm": 5, "collection": "Gemstone X"}."""
+    text = re.sub('§.', '', text or '').strip()
+    if text.startswith('Requires:'):
+        text = text[len('Requires:'):]
+    hotm, collection = 0, None
+    for part in (p.strip() for p in text.split('&')):
+        m = re.fullmatch(r'HotM (\d+)', part)
+        if m:
+            hotm = int(m.group(1))
+        elif part:
+            collection = part
+    out = {'hotm': hotm}
+    if collection:
+        out['collection'] = collection
+    return out
+
+
+requirements = {r['id']: requirement(items.get(r['id'], {}).get('crafttext')) for r in recipes}
+
 try:
     commit = subprocess.check_output(['git', '-C', os.path.dirname(os.path.abspath(items_dir)), 'log', '-1', '--format=%h %cs'],
                                      text=True).strip()
@@ -62,8 +83,11 @@ except Exception:
 os.makedirs(os.path.dirname(os.path.abspath(out_file)), exist_ok=True)
 with open(out_file, 'w', encoding='utf-8') as fh:
     json.dump({'source': 'NotEnoughUpdates-REPO items/*.json (type=forge), commit ' + commit,
-               'recipes': recipes, 'names': names}, fh, separators=(',', ':'), ensure_ascii=False)
+               'recipes': recipes, 'names': names, 'requirements': requirements}, fh, separators=(',', ':'), ensure_ascii=False)
 
 print('recipes:', len(recipes), '| with coins:', sum(1 for r in recipes if r['coins']),
       '| ids:', len(referenced), '| named:', len(names), '| missing names:', sorted(referenced - set(names))[:10])
+print('requirements: HotM tiers', sorted({v['hotm'] for v in requirements.values()}),
+      '| with a collection:', sum(1 for v in requirements.values() if 'collection' in v),
+      '| none:', sorted(k for k, v in requirements.items() if not v['hotm'] and 'collection' not in v))
 print('source commit:', commit, '->', os.path.abspath(out_file))

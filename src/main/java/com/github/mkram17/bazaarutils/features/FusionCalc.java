@@ -59,6 +59,33 @@ public class FusionCalc {
     public record NamedRecipe(String left, int leftCount, String right, int rightCount, String output, int outputCount) { }
 
     /** Every wiki recipe that makes the shard with this display name (e.g. "Hideoncave Shard"). */
+    /** Every wiki fusion recipe as display names. */
+    public static List<NamedRecipe> allNamedRecipes() {
+        loadRecipes();
+        List<NamedRecipe> out = new ArrayList<>();
+        for (int[] r : recipes) {
+            out.add(new NamedRecipe(ItemNames.of(ids[r[1]]), r[2], ItemNames.of(ids[r[3]]), r[4], ItemNames.of(ids[r[5]]), r[6]));
+        }
+        return out;
+    }
+
+    /**
+     * What one shard with this display name sells for with a sell offer after tax, from the last Bazaar snapshot (no
+     * network); NaN if unknown.
+     */
+    public static double sellValueByName(String name, double taxFraction) {
+        loadRecipes();
+        JsonObject products = BazaarSnapshot.cachedProducts();
+        if (products == null) return Double.NaN;
+        String wanted = ProfitLedger.norm(name);
+        for (String id : ids) {
+            if (!ProfitLedger.norm(ItemNames.of(id)).equals(wanted) || !products.has(id)) continue;
+            double ask = BazaarSnapshot.ask(products.getAsJsonObject(id));
+            return ask > 0 ? ask * (1 - taxFraction) : Double.NaN;
+        }
+        return Double.NaN;
+    }
+
     public static List<NamedRecipe> recipesMaking(String outputName) {
         loadRecipes();
         List<NamedRecipe> out = new ArrayList<>();

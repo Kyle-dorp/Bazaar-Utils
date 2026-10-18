@@ -283,7 +283,7 @@ public class FlipHud {
         String heading = switch (mode) {
             case 1 -> "§l§bBazaar Dips (Profit/hr)";
             case 2 -> "§l§dShard Fusions (Profit/hr)";
-            case 3 -> "§l§6Forge Flips (Profit/hr)";
+            case 3 -> ForgeCalc.filterTag().isEmpty() ? "§l§6Forge Flips (Profit/hr)" : "§l§6Forge Flips§r" + ForgeCalc.filterTag();
             default -> "§l§eBazaar Flips (Profit/hr)";
         };
         g.text(font, heading, x + 6, y + 7, textColor, true);
@@ -327,8 +327,48 @@ public class FlipHud {
         ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
             if (!(screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)) return;
             if (!screen.getTitle().getString().replaceAll("§.", "").contains("Fusion")) return;
-            ScreenEvents.afterExtract(screen).register((s, g, mouseX, mouseY, delta) -> render(g, mouseX, mouseY, 2));
+            ScreenEvents.afterExtract(screen).register((s, g, mouseX, mouseY, delta) -> {
+                render(g, mouseX, mouseY, 2);
+                renderFusionPotential(g);
+            });
         });
+    }
+
+    private static String shardLabel(String name) {
+        return name.endsWith(" Shard") ? name.substring(0, name.length() - 6) : name;
+    }
+
+    /** Under the fusion list in the Fusion Box: what the shards you already hold could make, over what they cost you. */
+    static void renderFusionPotential(GuiGraphicsExtractor g) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || boundsRight <= boundsLeft) return;
+        Font font = mc.font;
+        float s = scale();
+        FusionPotential.Plan plan = FlipTracker.fusionPotential();
+        List<String> lines = new ArrayList<>();
+        lines.add("§l§dPotential from shards you hold");
+        if (plan.fusions().isEmpty()) {
+            lines.add("§7Nothing profitable from your tracked shards.");
+        } else {
+            for (int i = 0; i < Math.min(5, plan.fusions().size()); i++) {
+                FusionPotential.Fusion f = plan.fusions().get(i);
+                FusionCalc.NamedRecipe r = f.recipe();
+                lines.add("§a+" + coins(f.profit()) + " §7" + f.times() + "x §f" + shardLabel(r.output()) + " §8("
+                        + r.leftCount() + " " + shardLabel(r.left()) + " + " + r.rightCount() + " " + shardLabel(r.right()) + ")");
+            }
+            int more = plan.fusions().size() - 5;
+            lines.add("§7Total §6+" + coins(plan.total()) + (more > 0 ? " §8(+" + more + " more)" : ""));
+        }
+        int x = Math.round(boundsLeft / s), y = Math.round((boundsBottom + 4) / s);
+        int height = 8 + lines.size() * 11;
+        g.pose().pushMatrix();
+        g.pose().scale(s, s);
+        g.fill(x, y, x + WIDTH, y + height, cfgColor("getBackgroundColor", 0xB0101018));
+        g.fill(x, y, x + WIDTH, y + 1, 0xFF3A3A4A);
+        for (int i = 0; i < lines.size(); i++) {
+            g.text(font, fit(font, lines.get(i), WIDTH - 12), x + 6, y + 5 + i * 11, 0xFFFFFFFF, true);
+        }
+        g.pose().popMatrix();
     }
 
     @RunOnInit

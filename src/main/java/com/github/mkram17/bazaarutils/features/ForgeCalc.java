@@ -63,6 +63,14 @@ public class ForgeCalc {
 
     private static Map<String, Recipe> recipes;
     private static Map<String, String> names = Map.of();
+
+    /** What forging an item needs (NEU crafttext): a HotM tier, and sometimes a collection tier like "Gemstone X". */
+    public record Requirement(int hotm, String collection) { }
+
+    private static final Requirement NONE = new Requirement(0, null);
+    private static Map<String, Requirement> requirements = Map.of();
+    /** Purse from the scoreboard, read on the client thread at each refresh; -1 or NaN when unknown. */
+    private static volatile double purse = Double.NaN;
     private static Map<String, Double> lowestBins = Map.of(), averageBins = Map.of();
     private static long ahFetchedAt;
     private static volatile List<Row> rows = List.of();
@@ -94,11 +102,67 @@ public class ForgeCalc {
             map.clear();
         }
         names = nameMap;
+        Map<String, Requirement> reqMap = new HashMap<>();
+        try (InputStream in = ForgeCalc.class.getResourceAsStream("/assets/bazaarutils/forge-recipes.json")) {
+            JsonObject o = JsonParser.parseString(new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)).getAsJsonObject();
+            if (o.has("requirements")) {
+                for (var e : o.getAsJsonObject("requirements").entrySet()) {
+                    JsonObject r = e.getValue().getAsJsonObject();
+                    reqMap.put(e.getKey(), new Requirement(r.get("hotm").getAsInt(),
+                            r.has("collection") ? r.get("collection").getAsString() : null));
+                }
+            }
+        } catch (Exception ignored) {
+            // no requirements: the unlock filter lets everything through
+        }
+        requirements = reqMap;
         recipes = map;
         return recipes;
     }
 
     /** In-game name for any forge item or part, including AH items the Bazaar name list doesn't know. */
+    /**
+     * The forge item a sold item is, ignoring reforges, stars and icons ("Fleet Titanium Drill DR-X455 ✪✪" is
+     * TITANIUM_DRILL_2; "[Lvl 1] Ammonite" is AMMONITE;4), or null. The longest matching name wins.
+     */
+    public static String forgeOutputFor(String soldName) {
+        String sold = ProfitLedger.norm(soldName);
+        String best = null;
+        int bestLen = 0;
+        for (String id : recipes().keySet()) {
+            String n = ProfitLedger.norm(name(id));
+            if (n.isEmpty() || n.length() <= bestLen) continue;
+            if (sold.equals(n) || sold.endsWith(" " + n)) {
+                best = id;
+                bestLen = n.length();
+            }
+        }
+        return best;
+    }
+
+    /**
+     * Unit prices of every part in an item's forge tree (not the item itself) from the prices already cached: Bazaar buy
+     * order, else lowest BIN. Used to value parts you didn't buy when a forge item sells; never touches the network.
+     */
+    public static Map<String, Double> partPrices(String id) {
+        Map<String, Double> out = new HashMap<>();
+        JsonObject products = BazaarSnapshot.cachedProducts();
+        addPartPrices(id, products, out, new HashSet<>());
+        return out;
+    }
+
+    private static void addPartPrices(String id, JsonObject products, Map<String, Double> out, Set<String> seen) {
+        Recipe r = recipes().get(id);
+        if (r == null || !seen.add(id)) return;
+        for (String part : r.inputs().keySet()) {
+            double price = Double.NaN;
+            if (products != null && products.has(part)) price = BazaarSnapshot.bid(products.getAsJsonObject(part));
+            else if (lowestBins.containsKey(ahKey(part))) price = lowestBins.get(ahKey(part));
+            if (price > 0) out.put(part, price);
+            addPartPrices(part, products, out, seen);
+        }
+    }
+
     public static String name(String id) {
         recipes();
         String n = names.get(id);
@@ -204,7 +268,31 @@ public class ForgeCalc {
         return rows;
     }
 
+    /** What forging {@code id} needs; HotM 0 and no collection if NEU lists nothing. */
+    public static Requirement requirement(String id) {
+        recipes();
+        return requirements.getOrDefault(id, NONE);
+    }
+
+    /** The purse read at the last refresh, NaN or -1 if it couldn't be read (not on SkyBlock, no sidebar). */
+    public static double lastPurse() {
+        return purse;
+    }
+
+    /** "[HotM 7, purse]" style marker for the list heading when a filter is on, "" otherwise. */
+    public static String filterTag() {
+        List<String> on = new ArrayList<>();
+        if (BaseProfit.isForgeUnlockFilter()) on.add("HotM " + BaseProfit.getHotmTier());
+        if (BaseProfit.isForgePurseFilter()) on.add(purse > 0 ? "purse " + FlipHud.coins(purse) : "purse unknown");
+        return on.isEmpty() ? "" : " §8[§7" + String.join("§8, §7", on) + "§8]";
+    }
+
     public static void refreshIfStale() {
+        // the scoreboard can only be read on the client thread; other callers keep the last reading
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.isSameThread()) purse = MaxBuyOrder.readPurse(mc);
+        } catch (Throwable ignored) { }
         long now = System.currentTimeMillis();
         if (running || now - lastRefresh < REFRESH_MS) return;
         running = true;
@@ -229,8 +317,21 @@ public class ForgeCalc {
         refreshAuctionPrices();
         Map<String, Double> lbin = lowestBins, avg = averageBins;
         ForgePlanner.Prices prices = prices(products, lbin, avg, BaseProfit.getTaxPercent() / 100.0, BaseProfit::priceOk);
+        java.util.function.Predicate<String> canForge = BaseProfit.isForgeUnlockFilter() ? unlockedAt(BaseProfit.getHotmTier()) : id -> true;
+        double maxCost = budget(BaseProfit.isForgePurseFilter(), purse);
         return rank(recipeMap, prices, products, lbin, avg, ForgeCalc::ahSalesPerHour, BaseProfit.getForgeSlots(),
-                1 - BaseProfit.getQuickForgePercent() / 100.0, BaseProfit.getForgeCheckHours() * 3600, BaseProfit.getCoins());
+                1 - BaseProfit.getQuickForgePercent() / 100.0, BaseProfit.getForgeCheckHours() * 3600, BaseProfit.getCoins(),
+                canForge, maxCost);
+    }
+
+    /** Recipes a player at this HotM tier can forge (recipes NEU lists no tier for count as tier 0). */
+    static java.util.function.Predicate<String> unlockedAt(int hotmTier) {
+        return id -> requirement(id).hotm() <= hotmTier;
+    }
+
+    /** Most a route may cost up front: the purse when the filter is on and the purse is known, otherwise no limit. */
+    static double budget(boolean purseFilter, double purse) {
+        return purseFilter && purse > 0 ? purse : Double.POSITIVE_INFINITY;
     }
 
     /** The 7-day average sanity check for a Bazaar price (BaseProfit.priceOk in game). */
@@ -270,8 +371,20 @@ public class ForgeCalc {
     static List<Row> rank(Map<String, Recipe> recipeMap, ForgePlanner.Prices prices, JsonObject products, Map<String, Double> lbin,
                           Map<String, Double> avg, java.util.function.ToDoubleFunction<String> ahSalesPerHour, int slots,
                           double timeFactor, double checkInSeconds, double minProfit) {
+        return rank(recipeMap, prices, products, lbin, avg, ahSalesPerHour, slots, timeFactor, checkInSeconds, minProfit,
+                id -> true, Double.POSITIVE_INFINITY);
+    }
+
+    /**
+     * {@link #rank} limited to what you can do: {@code canForge} says which recipes you have unlocked (parts you can't forge
+     * are bought instead) and {@code maxCost} caps the up-front cost of a route (your purse).
+     */
+    static List<Row> rank(Map<String, Recipe> recipeMap, ForgePlanner.Prices prices, JsonObject products, Map<String, Double> lbin,
+                          Map<String, Double> avg, java.util.function.ToDoubleFunction<String> ahSalesPerHour, int slots,
+                          double timeFactor, double checkInSeconds, double minProfit,
+                          java.util.function.Predicate<String> canForge, double maxCost) {
         List<Row> out = new ArrayList<>();
-        for (Route route : new ForgePlanner(recipeMap, prices, timeFactor, checkInSeconds).rankAll()) {
+        for (Route route : new ForgePlanner(recipeMap, prices, timeFactor, checkInSeconds, canForge).rankAll(maxCost)) {
             if (route.profit() < minProfit) continue;
             Recipe recipe = recipeMap.get(route.id());
             boolean onAh = !products.has(route.id());
@@ -332,6 +445,25 @@ public class ForgeCalc {
         return name(input) + " supply (~" + qty(Math.round(t.limitPerHour() * 24 * 10) / 10.0) + "/day, " + qty(perRun) + " per run)";
     }
 
+    /** The highest HotM tier and the collections a route's forges need, e.g. "HotM 5, Gemstone X". */
+    static String requirementText(Step tree) {
+        int[] hotm = {0};
+        Set<String> collections = new TreeSet<>();
+        collectRequirements(tree, hotm, collections);
+        List<String> parts = new ArrayList<>();
+        if (hotm[0] > 0) parts.add("HotM " + hotm[0]);
+        parts.addAll(collections);
+        return parts.isEmpty() ? "nothing" : String.join(", ", parts);
+    }
+
+    private static void collectRequirements(Step s, int[] hotm, Set<String> collections) {
+        if (!s.forged()) return;
+        Requirement r = requirement(s.id());
+        hotm[0] = Math.max(hotm[0], r.hotm());
+        if (r.collection() != null) collections.add(r.collection());
+        for (Step p : s.parts()) collectRequirements(p, hotm, collections);
+    }
+
     /** The route as chat lines: the tree of forge/buy decisions, then the totals. */
     public static List<String> routeLines(Row row, int slots, double checkHours) {
         Route r = row.route();
@@ -347,6 +479,7 @@ public class ForgeCalc {
                 + (checkHours > 0 ? ", collecting every " + duration(checkHours * 3600) : ""));
         lines.add("§a" + FlipHud.coins(r.profitPerSlotHour()) + "/hr per slot §7| §a" + FlipHud.coins(row.perHour())
                 + "/hr §7| §a" + FlipHud.coins(row.perDay()) + "/day §7with " + slots + " slots");
+        lines.add("§7Requires §f" + requirementText(r.tree()));
         lines.add("§7Limited by §f" + limitText(row, slots, true) + " §7- §f"
                 + qty(Math.round(row.throughput().runsPerHour() * 24 * 10) / 10.0) + " §7runs/day");
         lines.add("§7Market takes ~§f" + qty(Math.round(row.marketPerHour() * 24 * 10) / 10.0) + "/day"
@@ -357,6 +490,11 @@ public class ForgeCalc {
 
     @RunOnInit
     public static void registerCommand() {
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, buildContext) ->
+                dispatcher.register(ClientCommands.literal("forgesettings").executes(ctx -> {
+                    ForgeSettingsScreen.open();
+                    return 1;
+                })));
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, buildContext) ->
                 dispatcher.register(ClientCommands.literal("forgetree")
                         .executes(ctx -> {

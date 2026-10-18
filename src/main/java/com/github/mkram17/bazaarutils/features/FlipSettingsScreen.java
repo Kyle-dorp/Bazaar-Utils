@@ -183,25 +183,28 @@ public class FlipSettingsScreen extends Screen {
             b.setMessage(Component.literal(MODE_LABELS[listMode]));
         }).bounds(right, top + 6 * ROW_H - 4, COL_W, 20).build());
 
-        // forge list: how many slots run a route at once, and the Quick Forge perk's time saving
-        label(left, top + 7 * ROW_H - 10, "Forge slots (1-7)");
-        numberDouble(left, top + 7 * ROW_H, "Forge slots", BaseProfit.getForgeSlots(), v -> BaseProfit.setForgeSlots((int) v));
-        label(right, top + 7 * ROW_H - 10, "Quick Forge (%, 0-30)");
-        numberDouble(right, top + 7 * ROW_H, "Quick Forge", BaseProfit.getQuickForgePercent(), BaseProfit::setQuickForgePercent);
-        label(left, top + 8 * ROW_H - 10, "Check forges every (hours)");
-        numberDouble(left, top + 8 * ROW_H, "Check every", BaseProfit.getForgeCheckHours(), BaseProfit::setForgeCheckHours);
+        // forge list options (slots, Quick Forge, check-ins, HotM and purse filters) have their own screen
+        addRenderableWidget(Button.builder(Component.literal("Forge settings..."), b -> {
+            applyAll();
+            VersionCompat.setScreen(Minecraft.getInstance(), new ForgeSettingsScreen(this));
+        }).bounds(left, top + 7 * ROW_H - 4, COL_W, 20).build());
 
         addRenderableWidget(Button.builder(Component.literal("Save and close"), b -> onClose())
-                .bounds(width / 2 - 70, top + 9 * ROW_H + 2, 140, 20).build());
+                .bounds(width / 2 - 70, top + 8 * ROW_H + 2, 140, 20).build());
     }
 
-    @Override
-    public void onClose() {
+    /** Saves everything typed or toggled on this screen. */
+    private void applyAll() {
         for (Runnable r : savers) r.run();
         setInt("guiScale", scaleIndex);
         setBool("enableMonitoring", listOn);
         BaseProfit.setListMode(listMode);
         saveConfig();
+    }
+
+    @Override
+    public void onClose() {
+        applyAll();
         VersionCompat.setScreen(Minecraft.getInstance(), parent);
     }
 

@@ -82,13 +82,22 @@ public class MaxBuyOrder extends CustomOrder {
     }
 
     private static void updatePurse(Minecraft client) {
+        double read = readPurse(client);
+        if (!Double.isNaN(read)) purse = read;
+    }
+
+    /**
+     * The purse (or Piggy in the Rift) from the sidebar scoreboard, -1 if the sidebar has no purse line, NaN if there is no
+     * sidebar at all. Call on the client thread.
+     */
+    public static double readPurse(Minecraft client) {
         ClientLevel world = client.level;
-        if (world == null) return;
+        if (world == null) return Double.NaN;
 
         Scoreboard scoreboard = world.getScoreboard();
         Objective objective = scoreboard.getDisplayObjective(DisplaySlot.SIDEBAR);
 
-        if (objective == null) return;
+        if (objective == null) return Double.NaN;
 
         ObjectArrayList<String> stringLines = new ObjectArrayList<>();
         for (ScoreHolder scoreHolder : scoreboard.getTrackedPlayers()) {
@@ -102,7 +111,7 @@ public class MaxBuyOrder extends CustomOrder {
                 }
             }
         }
-        purse = getPurse(stringLines);
+        return getPurse(stringLines);
     }
 
     private static double getPurse(List<String> scoreboardLines) {

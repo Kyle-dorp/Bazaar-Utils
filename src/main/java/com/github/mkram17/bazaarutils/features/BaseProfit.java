@@ -46,6 +46,9 @@ public class BaseProfit {
             o.addProperty("forgeSlots", forgeSlots);
             o.addProperty("quickForgePercent", quickForgePercent);
             o.addProperty("forgeCheckHours", forgeCheckHours);
+            o.addProperty("forgeUnlockFilter", forgeUnlockFilter);
+            o.addProperty("hotmTier", hotmTier);
+            o.addProperty("forgePurseFilter", forgePurseFilter);
             Files.writeString(FILE, new Gson().toJson(o));
         } catch (Exception ignored) { }
     }
@@ -78,6 +81,44 @@ public class BaseProfit {
     private static volatile int forgeSlots = clampSlots((int) loadDouble("forgeSlots", 7));
     private static volatile double quickForgePercent = clampQuickForge(loadDouble("quickForgePercent", 0));
     private static volatile double forgeCheckHours = clampCheckHours(loadDouble("forgeCheckHours", 2));
+
+    private static volatile boolean forgeUnlockFilter = loadBool("forgeUnlockFilter", false);
+    private static volatile int hotmTier = clampHotm((int) loadDouble("hotmTier", 10));
+    private static volatile boolean forgePurseFilter = loadBool("forgePurseFilter", false);
+
+    private static int clampHotm(int value) {
+        return Math.max(0, Math.min(10, value));
+    }
+
+    /** Forge list: only forge recipes your HotM tier allows (parts you can't forge are bought instead). Off by default. */
+    public static boolean isForgeUnlockFilter() {
+        return forgeUnlockFilter;
+    }
+
+    public static void setForgeUnlockFilter(boolean value) {
+        forgeUnlockFilter = value;
+        save();
+    }
+
+    /** Your Heart of the Mountain tier (0-10), used by the unlock filter. */
+    public static int getHotmTier() {
+        return hotmTier;
+    }
+
+    public static void setHotmTier(int value) {
+        hotmTier = clampHotm(value);
+        save();
+    }
+
+    /** Forge list: only routes whose up-front cost fits the purse on your scoreboard. Off by default. */
+    public static boolean isForgePurseFilter() {
+        return forgePurseFilter;
+    }
+
+    public static void setForgePurseFilter(boolean value) {
+        forgePurseFilter = value;
+        save();
+    }
 
     private static double clampCheckHours(double value) {
         return Math.max(0, Math.min(48, value));

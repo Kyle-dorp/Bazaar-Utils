@@ -1,5 +1,8 @@
 package com.github.mkram17.bazaarutils.features;
 
+import com.github.mkram17.bazaarutils.features.ProfitLedger.Entry;
+import com.github.mkram17.bazaarutils.features.ProfitLedger.Mode;
+import com.github.mkram17.bazaarutils.features.ProfitLedger.Realized;
 import com.github.mkram17.bazaarutils.misc.autoregistration.RunOnInit;
 import com.github.mkram17.bazaarutils.utils.PlayerActionUtil;
 import com.google.gson.Gson;
@@ -21,35 +24,32 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Tracks Bazaar profit from chat messages. Every buy and sell is stored; profit is realized profit using the average
- * cost of what you bought: selling 100 items that cost you 50 each on average for 80 each is 3,000 profit.
- * Sell proceeds already have the Bazaar tax taken out. Show it with /bazaarflip profit.
+ * Tracks profit from chat: Bazaar buys and sells, auction house purchases and sales, fusions and forges, split by mode
+ * (Bazaar flips, AH flips, Fusions, Forge). The accounting lives in {@link ProfitLedger}; this class reads chat, saves the
+ * history and shows the totals. Profit is realized profit at average cost, after Bazaar tax / AH fees. Show it with
+ * /bazaarflip profit.
  */
 public class FlipTracker {
     private static final Path FILE = FabricLoader.getInstance().getConfigDir().resolve("bazaarflip-tracker.json");
     private static final long SESSION_START = System.currentTimeMillis();
 
-    private static final Pattern BUY_CLAIM = Pattern.compile("^\\[Bazaar\\] Claimed ([\\d,]+)x (.+) worth [\\d,.]+ coins bought for ([\\d,.]+) each!");
-    private static final Pattern SELL_CLAIM = Pattern.compile("^\\[Bazaar\\] Claimed ([\\d,.]+) coins from selling ([\\d,]+)x (.+) at [\\d,.]+ each!");
-    private static final Pattern INSTA_SELL = Pattern.compile("^\\[Bazaar\\] Sold ([\\d,]+)x (.+) for ([\\d,.]+) coins!");
-    private static final Pattern INSTA_BUY = Pattern.compile("^\\[Bazaar\\] Bought ([\\d,]+)x (.+) for ([\\d,.]+) coins!");
-
     // "FUSION! You obtained Troglobyte Shard x2!" / "FUSION! You obtained a Stoneworm Shard!" (from your chat logs)
     private static final Pattern FUSION = Pattern.compile("^FUSION! You obtained (?:an? )?(.+? Shard)(?: x([\\d,]+))?!");
 
-    private static class Entry {
-        long time;
-        String item;
-        boolean buy;
-        double qty;
-        double coins; // total paid (buy) or total received after tax (sell)
-        // a fusion: `item` x `qty` came out of the Fusion Machine, made from these inputs (null if they couldn't be matched)
-        boolean fusion;
-        String in1;
-        double in1Qty;
-        String in2;
-        double in2Qty;
-    }
+    /** Forge recipes for recognising forge sales, from the bundled forge data. */
+    static final ProfitLedger.Forges FORGES = new ProfitLedger.Forges() {
+        public String outputIdFor(String soldName) {
+            return ForgeCalc.forgeOutputFor(soldName);
+        }
+
+        public ForgePlanner.Recipe recipe(String id) {
+            return ForgeCalc.recipes().get(id);
+        }
+
+        public String name(String id) {
+            return ForgeCalc.name(id);
+        }
+    };
 
     private static final List<Entry> entries = load();
 
@@ -75,41 +75,37 @@ public class FlipTracker {
         return Double.parseDouble(s.replace(",", ""));
     }
 
-    private static void record(String item, boolean buy, double qty, double coins) {
-        Entry e = new Entry();
-        e.time = System.currentTimeMillis();
-        e.item = item.trim();
-        e.buy = buy;
-        e.qty = qty;
-        e.coins = coins;
-        entries.add(e);
-        save();
+    private static void onChat(String msg) {
+        long now = System.currentTimeMillis();
+        Entry trade = ProfitLedger.parseTrade(msg, now);
+        if (trade != null) {
+            if (!trade.buy) {
+                // a forge item you may have forged: remember what its parts cost right now, for parts you didn't buy
+                String forgeId = ForgeCalc.forgeOutputFor(trade.item);
+                if (forgeId != null) trade.forgePrices = ForgeCalc.partPrices(forgeId);
+            }
+            entries.add(trade);
+            changed();
+            return;
+        }
+        Matcher m = FUSION.matcher(msg);
+        if (m.find()) onFusion(m.group(1).trim(), m.group(2) == null ? 1 : num(m.group(2)));
     }
 
-    private static void onChat(String msg) {
-        Matcher m;
-        if ((m = BUY_CLAIM.matcher(msg)).find()) {
-            double qty = num(m.group(1));
-            record(m.group(2), true, qty, qty * num(m.group(3)));
-        } else if ((m = SELL_CLAIM.matcher(msg)).find()) {
-            record(m.group(3), false, num(m.group(2)), num(m.group(1)));
-        } else if ((m = INSTA_SELL.matcher(msg)).find()) {
-            record(m.group(2), false, num(m.group(1)), num(m.group(3)));
-        } else if ((m = INSTA_BUY.matcher(msg)).find()) {
-            record(m.group(2), true, num(m.group(1)), num(m.group(3)));
-        } else if ((m = FUSION.matcher(msg)).find()) {
-            onFusion(m.group(1).trim(), m.group(2) == null ? 1 : num(m.group(2)));
-        }
+    private static void changed() {
+        cachedAt = 0;
+        potentialAt = 0;
+        save();
     }
 
     /**
      * The fusion message names only the output, so the inputs are worked out: of the wiki recipes that make this shard (in
      * this amount, or double for a Pure Reptile proc), keep the ones whose inputs you're holding according to your tracked
-     * Bazaar buys, and pick the one whose inputs you bought most recently. Those inputs are then used up at their average
-     * cost and become the cost of the output. If nothing matches, the output has no known cost and its sale isn't counted.
+     * buys, and pick the one whose inputs you bought most recently. Those inputs are then used up at their average cost and
+     * become the cost of the output. If nothing matches, the output has no known cost and its sale isn't counted.
      */
     private static void onFusion(String output, double qty) {
-        Replay held = replay();
+        ProfitLedger.Replay held = replay();
         FusionCalc.NamedRecipe best = null;
         long bestTime = -1;
         for (FusionCalc.NamedRecipe r : FusionCalc.recipesMaking(output)) {
@@ -135,78 +131,18 @@ public class FlipTracker {
             e.in2Qty = best.rightCount();
         }
         entries.add(e);
-        save();
+        changed();
     }
 
-    private record Realized(long time, String item, double profit) { }
-
-    private record Replay(Map<String, double[]> stock, Map<String, Long> lastBuys, List<Realized> realized) {
-        double qty(String item) {
-            double[] s = stock.get(item);
-            return s == null ? 0 : s[0];
-        }
-
-        long lastBuy(String item) {
-            return lastBuys.getOrDefault(item, 0L);
-        }
-    }
-
-    private static List<Realized> realized() {
-        return replay().realized();
-    }
-
-    /** Replays every entry in order; each sale becomes one realized profit against that item's running average cost. */
-    private static Replay replay() {
+    private static ProfitLedger.Replay replay() {
         List<Entry> copy;
         synchronized (entries) {
             copy = new ArrayList<>(entries);
         }
-        copy.sort(Comparator.comparingLong(e -> e.time));
-        Map<String, double[]> stock = new HashMap<>(); // item -> {qty held, total cost}
-        Map<String, Long> lastBuys = new HashMap<>();
-        List<Realized> out = new ArrayList<>();
-        for (Entry e : copy) {
-            double[] s = stock.computeIfAbsent(e.item, k -> new double[2]);
-            if (e.fusion) {
-                if (e.in1 == null) continue; // inputs unknown: the output has no cost basis
-                double cost = 0;
-                boolean covered = true;
-                for (int i = 0; i < 2; i++) {
-                    String in = i == 0 ? e.in1 : e.in2;
-                    double need = i == 0 ? e.in1Qty : e.in2Qty;
-                    double[] si = stock.computeIfAbsent(in, k -> new double[2]);
-                    if (si[0] < need) {
-                        covered = false;
-                        break;
-                    }
-                    double basis = si[1] / si[0] * need;
-                    si[0] -= need;
-                    si[1] -= basis;
-                    cost += basis;
-                }
-                if (covered) {
-                    s[0] += e.qty;
-                    s[1] += cost;
-                }
-                continue;
-            }
-            if (e.buy) {
-                lastBuys.put(e.item, e.time);
-                s[0] += e.qty;
-                s[1] += e.coins;
-            } else if (s[0] > 0) {
-                double sold = Math.min(e.qty, s[0]);
-                double avg = s[1] / s[0];
-                double basis = avg * sold;
-                double proceeds = e.coins * (sold / e.qty);
-                s[0] -= sold;
-                s[1] -= basis;
-                out.add(new Realized(e.time, e.item, proceeds - basis));
-            }
-            // selling items with no recorded purchase has no cost basis, so it isn't counted
-        }
-        return new Replay(stock, lastBuys, out);
+        return ProfitLedger.replay(copy, FORGES);
     }
+
+    // ---- summary ----
 
     private static String coins(double v) {
         double a = Math.abs(v);
@@ -218,16 +154,14 @@ public class FlipTracker {
         return (v < 0 ? "-" : "") + s;
     }
 
+    /** "~" in front of a total that includes estimated forge costs. */
+    private static String money(double[] t) {
+        return (t[0] >= 0 ? "§a" : "§c") + (t[2] > 0 ? "~" : "") + coins(t[0]);
+    }
+
     private static String line(String label, List<Realized> list, long since) {
-        double total = 0;
-        int count = 0;
-        for (Realized r : list) {
-            if (r.time >= since) {
-                total += r.profit;
-                count++;
-            }
-        }
-        return label + ": " + (total >= 0 ? "§a" : "§c") + coins(total) + " §7(" + count + " sales)";
+        double[] t = ProfitLedger.total(list, since, null);
+        return label + ": " + money(t) + " §7(" + (long) t[1] + " sales)";
     }
 
     private static volatile List<String> cachedLines = List.of();
@@ -237,7 +171,7 @@ public class FlipTracker {
     public static List<String> summaryLines() {
         long now = System.currentTimeMillis();
         if (now - cachedAt < 1000) return cachedLines;
-        List<Realized> list = realized();
+        List<Realized> list = replay().realized();
         long today = LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();
         List<String> lines = new ArrayList<>();
         lines.add("§e§lProfit §7(after tax)");
@@ -245,9 +179,16 @@ public class FlipTracker {
         lines.add("§7" + line("Today", list, today));
         lines.add("§7" + line("All time", list, 0));
         lines.add("");
+        lines.add("§e§lBy mode §8today | all time");
+        for (Mode mode : Mode.values()) {
+            lines.add("§7" + mode.label + " " + money(ProfitLedger.total(list, today, mode)) + " §8| "
+                    + money(ProfitLedger.total(list, 0, mode)));
+        }
+        if (ProfitLedger.total(list, 0, Mode.FORGE)[2] > 0) lines.add("§8~ forge parts you didn't buy at sale price");
+        lines.add("");
         lines.add("§e§lTop items");
         Map<String, Double> byItem = new HashMap<>();
-        for (Realized r : list) byItem.merge(r.item, r.profit, Double::sum);
+        for (Realized r : list) byItem.merge(r.item(), r.profit(), Double::sum);
         byItem.entrySet().stream()
                 .sorted((a, b) -> Double.compare(b.getValue(), a.getValue()))
                 .limit(8)
@@ -256,6 +197,26 @@ public class FlipTracker {
         cachedLines = lines;
         cachedAt = now;
         return lines;
+    }
+
+    // ---- potential fusions (shown while the Fusion Box is open) ----
+
+    private static volatile FusionPotential.Plan potential = new FusionPotential.Plan(List.of(), 0);
+    private static volatile long potentialAt;
+
+    /** Fusions you could do with the shards you hold (tracked buys and fusions), at what they cost you; every 2 seconds. */
+    public static FusionPotential.Plan fusionPotential() {
+        long now = System.currentTimeMillis();
+        if (now - potentialAt < 2000) return potential;
+        Map<String, double[]> held = new HashMap<>();
+        for (var e : replay().stock().entrySet()) {
+            double qty = e.getValue().qty();
+            if (qty > 1e-9) held.put(e.getKey(), new double[]{qty, e.getValue().cost()});
+        }
+        double tax = BaseProfit.getTaxPercent() / 100.0;
+        potential = FusionPotential.plan(held, FusionCalc.allNamedRecipes(), name -> FusionCalc.sellValueByName(name, tax));
+        potentialAt = now;
+        return potential;
     }
 
     /** Opens the flip settings screen, which shows the profit summary on the side (kept out of chat). */
@@ -267,7 +228,7 @@ public class FlipTracker {
 
     private static int reset() {
         entries.clear();
-        save();
+        changed();
         PlayerActionUtil.notifyAll("Flip tracker reset.");
         return 1;
     }
