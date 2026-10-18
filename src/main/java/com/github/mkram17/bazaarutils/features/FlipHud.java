@@ -28,7 +28,6 @@ import java.util.List;
 public class FlipHud {
     private static final String CONFIG = "uwu.ramona.bazaar.config.BazaarConfig";
     private static final String MOD = "uwu.ramona.bazaar.BazaarFlipMod";
-    private static final String ITEM = "uwu.ramona.bazaar.BazaarFlipMod$BazaarItem";
 
     private static final int WIDTH = FlipHudLayout.WIDTH, TITLE_H = FlipHudLayout.TITLE_H, ROW_H = FlipHudLayout.ROW_H;
 
@@ -75,34 +74,6 @@ public class FlipHud {
     }
 
     @SuppressWarnings("unchecked")
-    private static List<Object> items() {
-        List<Object> out = new ArrayList<>();
-        try {
-            Class<?> mod = Class.forName(MOD);
-            for (String list : new String[]{"topItemsByPercentage", "topItemsByMoney"}) {
-                List<Object> l = (List<Object>) mod.getField(list).get(null);
-                if (l != null) out.addAll(l);
-            }
-        } catch (Exception ignored) { }
-        return out;
-    }
-
-    private static double d(Object item, String field) {
-        try {
-            return Class.forName(ITEM).getField(field).getDouble(item);
-        } catch (Exception e) {
-            return 0;
-        }
-    }
-
-    private static String id(Object item) {
-        try {
-            return (String) Class.forName(ITEM).getField("id").get(item);
-        } catch (Exception e) {
-            return "?";
-        }
-    }
-
     private static float scale() {
         return switch (cfgInt("guiScale")) {
             case 1 -> 0.5f;
@@ -217,19 +188,19 @@ public class FlipHud {
             return out;
         }
         boolean dips = mode == 1;
-        for (Object it : items()) {
-            String id = id(it);
-            String third = "§6Profit: §r" + coins(d(it, "profit")) + " §e(" + String.format("%.1f", d(it, "profitMargin")) + "%)"
-                    + " §7Cost: §r" + coins(d(it, "totalBuyCost"));
+        for (BazaarFlipRows.Row it : BazaarFlipRows.get()) {
+            String id = it.id();
+            String third = "§6Profit: §r" + coins(it.profit()) + " §e(" + String.format("%.1f", it.profitMargin()) + "%)"
+                    + " §7Cost: §r" + coins(it.totalBuyCost());
             if (dips) {
-                double dip = BaseProfit.dipPercent(id, d(it, "buyPrice"));
+                double dip = BaseProfit.dipPercent(id, it.buyPrice());
                 if (!Double.isNaN(dip)) {
                     third = "§bDip: -" + String.format("%.0f", dip) + "% §7(usually §r" + coins(BaseProfit.typicalBuy(id))
-                            + "§7) §6+" + coins(d(it, "profit"));
+                            + "§7) §6+" + coins(it.profit());
                 }
             }
-            out.add(new Row(ItemNames.of(id), d(it, "totalProfit"),
-                    "§7Buy: §r" + coins(d(it, "buyPrice")) + " §7| §aSell: §r" + coins(d(it, "sellPrice")), third, ItemNames.of(id)));
+            out.add(new Row(ItemNames.of(id), it.totalProfit(),
+                    "§7Buy: §r" + coins(it.buyPrice()) + " §7| §aSell: §r" + coins(it.sellPrice()), third, ItemNames.of(id)));
         }
         if (!dips) {
             BookCraft.refreshIfStale();
