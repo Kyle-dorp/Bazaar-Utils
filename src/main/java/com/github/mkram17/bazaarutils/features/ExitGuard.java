@@ -37,11 +37,19 @@ public final class ExitGuard {
         return sb.toString();
     }
 
+    private static void log(Path log, String text) {
+        try {
+            Files.writeString(log, java.time.LocalDateTime.now() + " " + text + "\n", StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (IOException ignored) { }
+    }
+
     /**
      * Starts the guard (a daemon thread): waits for {@code gameThread} to end, then {@code graceMs}; if threads still hold the
-     * JVM, logs them to {@code log} and runs {@code exit} (System.exit in game).
+     * JVM, logs them to {@code log} and runs {@code exit} (System.exit in game) on its own daemon thread. System.exit can block
+     * for good (it waits for every shutdown hook, and a mod's hook can hang), so if the process is still here {@code haltAfterMs}
+     * later, {@code halt} (Runtime.halt in game, which skips the hooks) ends it.
      */
-    static Thread start(Thread gameThread, long graceMs, Path log, Runnable exit) {
+    static Thread start(Thread gameThread, long graceMs, Path log, Runnable exit, Runnable halt, long haltAfterMs) {
         Thread guard = new Thread(() -> {
             try {
                 gameThread.join();
@@ -52,12 +60,17 @@ public final class ExitGuard {
             Map<Thread, StackTraceElement[]> stacks = Thread.getAllStackTraces();
             List<Thread> holding = holdingTheJvm(stacks.keySet(), List.of(Thread.currentThread(), gameThread));
             if (holding.isEmpty()) return;
+            log(log, "game closed but " + holding.size() + " thread(s) kept the process alive; exiting anyway:\n"
+                    + describe(stacks, holding).stripTrailing());
+            Thread exiting = new Thread(exit, "BazaarUtils-exit");
+            exiting.setDaemon(true);
+            exiting.start();
             try {
-                Files.writeString(log, java.time.LocalDateTime.now() + " game closed but " + holding.size()
-                                + " thread(s) kept the process alive; exiting anyway:\n" + describe(stacks, holding),
-                        StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-            } catch (IOException ignored) { }
-            exit.run();
+                exiting.join(haltAfterMs);
+            } catch (InterruptedException ignored) { }
+            // a working exit never gets here: the process is gone
+            log(log, "still running after exit (waited up to " + haltAfterMs + " ms; a shutdown hook is stuck?); halting");
+            halt.run();
         }, "BazaarUtils-exit-guard");
         guard.setDaemon(true);
         guard.start();

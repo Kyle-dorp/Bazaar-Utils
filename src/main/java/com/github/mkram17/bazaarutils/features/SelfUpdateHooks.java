@@ -73,7 +73,7 @@ public final class SelfUpdateHooks {
             SelfUpdate.Install install = SelfUpdate.plan(Path.of(stagedJar), runningJar());
             if (install == null) return; // nothing staged, staged jar doesn't match its .sha256, or it's already this one
             Path script = CONFIG.resolve("bazaarutils-selfupdate.ps1");
-            Files.writeString(script, SelfUpdate.script(install, ProcessHandle.current().pid(), LOG, MARKER));
+            Files.writeString(script, SelfUpdate.script(install, ProcessHandle.current().pid(), LOG, MARKER, 6 * 3600));
             log("game closing; installing " + install.sha256() + " once it has");
             new ProcessBuilder("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
                     "-WindowStyle", "Hidden", "-File", script.toString())
@@ -88,7 +88,8 @@ public final class SelfUpdateHooks {
         load();
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
             installOnExit();
-            ExitGuard.start(Thread.currentThread(), 5000, CONFIG.resolve("bazaarutils-exit.log"), () -> System.exit(0));
+            ExitGuard.start(Thread.currentThread(), 5000, CONFIG.resolve("bazaarutils-exit.log"), () -> System.exit(0),
+                    () -> Runtime.getRuntime().halt(0), 3000);
         });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (announced || client.player == null) return;
@@ -100,6 +101,16 @@ public final class SelfUpdateHooks {
                     PlayerActionUtil.notifyAll("§aBazaarUtils updated§r §8(" + (hash.length() > 8 ? hash.substring(0, 8) : hash) + ")");
                 }
             } catch (Exception ignored) { }
+            if (!enabled) return;
+            // an update that's staged but not installed (the last install didn't happen): say so once, off the render thread
+            Thread check = new Thread(() -> {
+                SelfUpdate.Install pending = SelfUpdate.plan(Path.of(stagedJar), runningJar());
+                if (pending == null) return;
+                log("started with an update staged but not installed (" + pending.sha256() + "); it installs at the next close");
+                client.execute(() -> PlayerActionUtil.notifyAll("§eA BazaarUtils update is waiting§r - it installs when you quit the game."));
+            }, "BazaarUtils-update-check");
+            check.setDaemon(true);
+            check.start();
         });
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, buildContext) -> dispatcher.register(ClientCommands.literal("flipautoupdate")
                 .executes(ctx -> {

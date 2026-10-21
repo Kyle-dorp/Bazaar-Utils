@@ -62,41 +62,61 @@ public final class SelfUpdate {
     }
 
     /**
-     * The installer script. Run without {@code -Detached} it re-launches itself outside the game's process tree (so a launcher
-     * that kills the game's children can't stop it) and exits; detached, it waits for the game (process {@code gamePid}) to
-     * close, copies the staged jar aside and checks its hash again, keeps a backup, moves it into place, verifies it, and writes
-     * {@code marker} so the next start can say "updated". Every step is logged to {@code log}.
+     * The installer script. Run without {@code -Detached} it hands itself to a one-off scheduled task, so it runs outside the
+     * game's process tree and isn't owned by anything that can kill it (a launcher that kills the game's children, or WMI's
+     * provider host, which silently killed the first version), and exits. Detached, it waits for the game (process
+     * {@code gamePid}) to close, up to {@code maxWaitSeconds}, copies the staged jar aside and checks its hash again, keeps a
+     * backup, moves it into place, verifies it, writes {@code marker} so the next start can say "updated", and removes its
+     * task. Every way it can end is logged to {@code log}.
      */
-    public static String script(Install i, long gamePid, Path log, Path marker) {
+    public static String script(Install i, long gamePid, Path log, Path marker, long maxWaitSeconds) {
         Path incoming = i.backup().resolveSibling(i.target().getFileName() + ".incoming");
+        String task = "BazaarUtils-update-" + gamePid;
         return String.join("\r\n",
                 "param([switch]$Detached)",
                 "$log = " + q(log),
+                "$task = '" + task + "'",
                 "function Log($m) { Add-Content -LiteralPath $log -Value ((Get-Date -Format s) + ' ' + $m) }",
                 "if (-not $Detached) {",
                 "  try {",
-                "    $cmd = 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File \"' + $PSCommandPath + '\" -Detached'",
-                "    $r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $cmd }",
-                "    if ($r.ReturnValue -eq 0) { Log ('waiting for the game to close (installer ' + $r.ProcessId + ')'); exit 0 }",
-                "  } catch { }",
-                "  Log 'could not detach; installing from this process'",
+                "    $arg = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File \"' + $PSCommandPath + '\" -Detached'",
+                "    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arg",
+                "    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 7)",
+                "    Register-ScheduledTask -TaskName $task -Action $action -Settings $settings -Force -ErrorAction Stop | Out-Null",
+                "    Start-ScheduledTask -TaskName $task -ErrorAction Stop",
+                "    Log ('handed off to scheduled task ' + $task + '; it installs once the game (process " + gamePid + ") has closed')",
+                "    exit 0",
+                "  } catch { Log ('could not start a scheduled task (' + $_ + '); installing from this process instead') }",
                 "}",
+                "$done = $false",
                 "try {",
-                "  $game = Get-Process -Id " + gamePid + " -ErrorAction SilentlyContinue",
-                "  if ($game -and -not $game.WaitForExit(600000)) { Log 'game still running after 10 minutes; not installing'; exit 1 }",
+                "  Log 'installer started; waiting for the game (process " + gamePid + ") to close'",
+                "  $deadline = (Get-Date).AddSeconds(" + maxWaitSeconds + ")",
+                "  $noted = Get-Date",
+                "  while (Get-Process -Id " + gamePid + " -ErrorAction SilentlyContinue) {",
+                "    if ((Get-Date) -gt $deadline) { Log 'the game (process " + gamePid + ") is still running after " + maxWaitSeconds + " s; not installing (the next close tries again)'; $done = $true; exit 1 }",
+                "    if (((Get-Date) - $noted).TotalMinutes -ge 5) { Log 'still waiting for the game (process " + gamePid + ") to close'; $noted = Get-Date }",
+                "    Start-Sleep -Seconds 1",
+                "  }",
+                "  Log 'game closed; installing'",
                 "  Start-Sleep -Milliseconds 500",
                 "  $expected = '" + i.sha256() + "'",
                 "  $incoming = " + q(incoming),
                 "  Copy-Item -LiteralPath " + q(i.staged()) + " -Destination $incoming -Force",
                 "  $h = (Get-FileHash -LiteralPath $incoming -Algorithm SHA256).Hash.ToLower()",
-                "  if ($h -ne $expected) { Remove-Item -LiteralPath $incoming -Force; Log ('staged jar changed since the game checked it (' + $h + '); not installing'); exit 1 }",
+                "  if ($h -ne $expected) { Remove-Item -LiteralPath $incoming -Force; Log ('staged jar changed since the game checked it (' + $h + '); not installing'); $done = $true; exit 1 }",
                 "  Copy-Item -LiteralPath " + q(i.target()) + " -Destination " + q(i.backup()) + " -Force",
                 "  Move-Item -LiteralPath $incoming -Destination " + q(i.target()) + " -Force",
                 "  $after = (Get-FileHash -LiteralPath " + q(i.target()) + " -Algorithm SHA256).Hash.ToLower()",
-                "  if ($after -ne $expected) { Copy-Item -LiteralPath " + q(i.backup()) + " -Destination " + q(i.target()) + " -Force; Log 'installed jar failed its hash check; restored the old one'; exit 1 }",
+                "  if ($after -ne $expected) { Copy-Item -LiteralPath " + q(i.backup()) + " -Destination " + q(i.target()) + " -Force; Log 'installed jar failed its hash check; restored the old one'; $done = $true; exit 1 }",
                 "  Set-Content -LiteralPath " + q(marker) + " -Value $expected",
                 "  Log ('installed ' + $expected + ', old jar kept as ' + " + q(i.backup()) + ")",
-                "} catch { Log ('failed: ' + $_) }",
+                "  $done = $true",
+                "} catch { Log ('failed: ' + $_); $done = $true }",
+                "finally {",
+                "  if (-not $done) { Log 'installer stopped before finishing' }",
+                "  if ($Detached) { Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue }",
+                "}",
                 "");
     }
 }

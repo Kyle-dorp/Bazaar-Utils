@@ -62,7 +62,7 @@ class SelfUpdateTest {
     private void runScript(SelfUpdate.Install i, Path log, Path marker) throws Exception {
         Process gone = new ProcessBuilder("cmd", "/c", "exit").start();
         gone.waitFor();
-        Path script = Files.writeString(dir.resolve("update.ps1"), SelfUpdate.script(i, gone.pid(), log, marker));
+        Path script = Files.writeString(dir.resolve("update.ps1"), SelfUpdate.script(i, gone.pid(), log, marker, 60));
         Process p = new ProcessBuilder("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
                 script.toString(), "-Detached").redirectErrorStream(true).start();
         assertTrue(p.waitFor(60, TimeUnit.SECONDS), "installer finished");
@@ -95,5 +95,43 @@ class SelfUpdateTest {
         assertFalse(Files.exists(marker));
         assertFalse(Files.exists(i.backup()));
         assertTrue(Files.readString(log).contains("not installing"));
+    }
+    private Process runDetached(SelfUpdate.Install i, long gamePid, long maxWaitSeconds, Path log, Path marker) throws Exception {
+        Path script = Files.writeString(dir.resolve("wait.ps1"), SelfUpdate.script(i, gamePid, log, marker, maxWaitSeconds));
+        return new ProcessBuilder("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
+                script.toString(), "-Detached").redirectErrorStream(true).start();
+    }
+
+    @Test
+    void theInstallerWaitsForTheGameToCloseThenInstalls() throws Exception {
+        Assumptions.assumeTrue(windows());
+        setUp("old", "new", true);
+        SelfUpdate.Install i = SelfUpdate.plan(staged, running);
+        Process game = new ProcessBuilder("powershell.exe", "-NoProfile", "-Command", "Start-Sleep -Seconds 4").start();
+        Path log = dir.resolve("update.log"), marker = dir.resolve("updated.txt");
+        Process installer = runDetached(i, game.pid(), 60, log, marker);
+        Thread.sleep(1500);
+        assertEquals("old", Files.readString(running), "nothing replaced while the game still runs");
+        assertTrue(installer.waitFor(60, TimeUnit.SECONDS));
+        assertFalse(game.isAlive());
+        String text = Files.readString(log);
+        assertEquals("new", Files.readString(running), text);
+        assertTrue(text.contains("game closed; installing") && text.contains("installed "), text);
+    }
+
+    @Test
+    void aGameThatNeverClosesIsLoggedAndNothingIsInstalled() throws Exception {
+        Assumptions.assumeTrue(windows());
+        setUp("old", "new", true);
+        SelfUpdate.Install i = SelfUpdate.plan(staged, running);
+        Process game = new ProcessBuilder("powershell.exe", "-NoProfile", "-Command", "Start-Sleep -Seconds 60").start();
+        try {
+            Path log = dir.resolve("update.log"), marker = dir.resolve("updated.txt");
+            assertTrue(runDetached(i, game.pid(), 2, log, marker).waitFor(60, TimeUnit.SECONDS));
+            assertEquals("old", Files.readString(running));
+            assertTrue(Files.readString(log).contains("still running after 2 s; not installing"), Files.readString(log));
+        } finally {
+            game.destroyForcibly();
+        }
     }
 }
