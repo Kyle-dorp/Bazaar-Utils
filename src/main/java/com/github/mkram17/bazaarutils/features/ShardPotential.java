@@ -38,10 +38,27 @@ final class ShardPotential {
 
     /** The latest plan for the shards in your Hunting Box. Render thread only. */
     static FusionPotential.Plan get() {
+        if (!Flippers.on(Flippers.Flipper.POTENTIAL)) return FusionPotential.EMPTY; // turned off: no SkyHanni reads, no plans
         Map<String, Integer> h = heldShards();
+        fetchPricesIfFusionsOff();
         JsonObject products = BazaarSnapshot.cachedProducts();
         if (h.isEmpty() || products == null) return FusionPotential.EMPTY;
         return plan.get(new Key(h, System.identityHashCode(products)));
+    }
+
+    private static volatile long pricesFetchedAt;
+
+    /** The fusion list normally keeps the Bazaar prices fresh; with it turned off, the panel fetches them itself (every 60 s). */
+    private static void fetchPricesIfFusionsOff() {
+        if (Flippers.on(Flippers.Flipper.FUSIONS) || FlipPause.paused()) return;
+        long now = System.currentTimeMillis();
+        if (now - pricesFetchedAt < 60_000) return;
+        pricesFetchedAt = now;
+        worker.execute(() -> {
+            try {
+                BazaarSnapshot.products();
+            } catch (Exception ignored) { }
+        });
     }
 
     static Source source() {

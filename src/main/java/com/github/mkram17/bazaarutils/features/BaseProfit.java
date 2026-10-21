@@ -49,6 +49,9 @@ public class BaseProfit {
             o.addProperty("forgeUnlockFilter", forgeUnlockFilter);
             o.addProperty("hotmTier", hotmTier);
             o.addProperty("forgePurseFilter", forgePurseFilter);
+            com.google.gson.JsonArray flippersOff = new com.google.gson.JsonArray();
+            for (String name : Flippers.offNames()) flippersOff.add(name);
+            o.add("flippersOff", flippersOff);
             Files.writeString(FILE, new Gson().toJson(o));
         } catch (Exception ignored) { }
     }
@@ -85,6 +88,28 @@ public class BaseProfit {
     private static volatile boolean forgeUnlockFilter = loadBool("forgeUnlockFilter", false);
     private static volatile int hotmTier = clampHotm((int) loadDouble("hotmTier", 10));
     private static volatile boolean forgePurseFilter = loadBool("forgePurseFilter", false);
+    private static final boolean flippersLoaded = loadFlippers();
+
+    // the /bazaarflip flipper checkboxes: names of the ones that are off (none = all on)
+    private static boolean loadFlippers() {
+        try {
+            if (Files.exists(FILE)) {
+                JsonObject o = new Gson().fromJson(Files.readString(FILE), JsonObject.class);
+                if (o.has("flippersOff")) {
+                    java.util.List<String> names = new java.util.ArrayList<>();
+                    for (var e : o.getAsJsonArray("flippersOff")) names.add(e.getAsString());
+                    Flippers.load(names);
+                }
+            }
+        } catch (Exception ignored) { }
+        return true;
+    }
+
+    /** Turns a flipper on or off (the /bazaarflip checkboxes) and saves it. */
+    public static void setFlipperOn(Flippers.Flipper f, boolean on) {
+        Flippers.set(f, on);
+        save();
+    }
 
     private static int clampHotm(int value) {
         return Math.max(0, Math.min(10, value));
@@ -414,7 +439,8 @@ public class BaseProfit {
      * not daemon threads, so they keep the JVM alive after the game closes and the launcher reports a crash.
      */
     public static java.util.concurrent.ScheduledExecutorService daemonScheduler(int threads) {
-        return java.util.concurrent.Executors.newScheduledThreadPool(threads, runnable -> {
+        // its periodic Bazaar checks are skipped while the flip list is paused
+        return FlipPause.pausableScheduler(threads, runnable -> {
             Thread thread = new Thread(runnable, "BazaarFlip-scheduler");
             thread.setDaemon(true);
             return thread;

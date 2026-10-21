@@ -65,18 +65,22 @@ public final class OpportunityFeed {
 
     /** Every list's current rows as options, with your market share from the last Bazaar snapshot's order book. */
     public static Options gather(AdvisorConfig cfg) {
-        BookCraft.refreshIfStale();
+        BookCraft.refreshIfStale(); // each does nothing while its flipper is off (or the list is paused)
         FusionCalc.refreshIfStale(); // also keeps the shared Bazaar snapshot (the order book) fresh
         ForgeCalc.refreshIfStale();
         JsonObject products = BazaarSnapshot.cachedProducts();
         MarketShare shares = cfg.shares(products);
         double check = cfg.orderCheckHours();
-        List<Opportunity> flips = flips(BazaarFlipRows.get(), BaseProfit.isDipMode(), BaseProfit::typicalBuy, ItemNames::of, check, shares);
-        List<Opportunity> books = books(BookCraft.get(), check, shares);
-        List<Opportunity> fusions = fusions(FusionCalc.get(), ItemNames::of, check, shares);
-        List<Opportunity> forges = forges(ForgeCalc.get(), ForgeCalc::name, BaseProfit.getForgeCheckHours(), shares,
+        // flippers turned off in /bazaarflip are left out
+        boolean dips = BaseProfit.isDipMode();
+        List<Opportunity> flips = Flippers.only(dips ? Flippers.Flipper.DIPS : Flippers.Flipper.FLIPS,
+                () -> flips(BazaarFlipRows.get(), dips, BaseProfit::typicalBuy, ItemNames::of, check, shares));
+        List<Opportunity> books = Flippers.only(Flippers.Flipper.BOOKS, () -> books(BookCraft.get(), check, shares));
+        List<Opportunity> fusions = Flippers.only(Flippers.Flipper.FUSIONS, () -> fusions(FusionCalc.get(), ItemNames::of, check, shares));
+        List<Opportunity> forges = Flippers.only(Flippers.Flipper.FORGE, () -> forges(ForgeCalc.get(), ForgeCalc::name,
+                BaseProfit.getForgeCheckHours(), shares,
                 id -> products == null ? Double.NaN : products.has(id) ? BazaarSnapshot.fillRate(products.getAsJsonObject(id))
-                        : ForgeCalc.ahSalesPerHour(id));
+                        : ForgeCalc.ahSalesPerHour(id)));
         List<Opportunity> all = new ArrayList<>(flips);
         all.addAll(books);
         all.addAll(fusions);

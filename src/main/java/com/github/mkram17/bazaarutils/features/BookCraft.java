@@ -41,6 +41,7 @@ public class BookCraft {
 
     /** Starts a background recompute if the data is older than 45 seconds. Cheap to call every frame. */
     public static void refreshIfStale() {
+        if (FlipPause.paused() || !Flippers.on(Flippers.Flipper.BOOKS)) return; // frozen while paused, nothing when off
         long now = System.currentTimeMillis();
         if (running || now - lastRefresh < REFRESH_MS) return;
         running = true;

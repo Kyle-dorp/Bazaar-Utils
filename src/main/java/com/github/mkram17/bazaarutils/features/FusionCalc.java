@@ -125,6 +125,7 @@ public class FusionCalc {
     }
 
     public static void refreshIfStale() {
+        if (FlipPause.paused() || !Flippers.on(Flippers.Flipper.FUSIONS)) return; // frozen while paused, nothing when off
         long now = System.currentTimeMillis();
         if (running || now - lastRefresh < REFRESH_MS) return;
         running = true;

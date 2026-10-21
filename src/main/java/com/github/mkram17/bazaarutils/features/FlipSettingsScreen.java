@@ -28,6 +28,8 @@ public class FlipSettingsScreen extends Screen {
     private static final String[] MODE_LABELS = {"List: FLIPS (stable spreads)", "List: DIPS (cheap vs normal)", "List: FUSIONS (shards)",
             "List: FORGE (full routes)"};
     private Button scaleButton, listButton;
+    // the flipper checkboxes, applied on save (index = Flippers.Flipper ordinal)
+    private final boolean[] flipperOn = new boolean[Flippers.Flipper.values().length];
 
     /** BazaarFlip opens its config screen with a no-arg constructor, so this is what the patch calls. */
     public FlipSettingsScreen() {
@@ -189,8 +191,27 @@ public class FlipSettingsScreen extends Screen {
             VersionCompat.setScreen(Minecraft.getInstance(), new ForgeSettingsScreen(this));
         }).bounds(left, top + 7 * ROW_H - 4, COL_W, 20).build());
 
+        // flippers: one compact row of checkboxes; off = not computed or fetched at all, not in the list, the cycle key or the advisor
+        int flipY = top + 8 * ROW_H + 4;
+        label(left, flipY - 11, "FLIPPERS §8(green on, crossed out off; hover for details)");
+        Flippers.Flipper[] all = Flippers.Flipper.values();
+        int bw = (2 * COL_W + GAP - (all.length - 1) * 2) / all.length;
+        for (Flippers.Flipper f : all) {
+            flipperOn[f.ordinal()] = Flippers.on(f);
+            Button cb = Button.builder(flipperLabel(f), b -> {
+                flipperOn[f.ordinal()] = !flipperOn[f.ordinal()];
+                b.setMessage(flipperLabel(f));
+            }).bounds(left + f.ordinal() * (bw + 2), flipY, bw, 16).tooltip(net.minecraft.client.gui.components.Tooltip.create(
+                    Component.literal(f.description + "\nOff: not computed or fetched, left out of the list, the cycle key and the advisor."))).build();
+            addRenderableWidget(cb);
+        }
+
         addRenderableWidget(Button.builder(Component.literal("Save and close"), b -> onClose())
-                .bounds(width / 2 - 70, top + 8 * ROW_H + 2, 140, 20).build());
+                .bounds(width / 2 - 70, flipY + 22, 140, 20).build());
+    }
+
+    private Component flipperLabel(Flippers.Flipper f) {
+        return Component.literal((flipperOn[f.ordinal()] ? "§a" : "§8§m") + f.label);
     }
 
     /** Saves everything typed or toggled on this screen. */
@@ -198,6 +219,10 @@ public class FlipSettingsScreen extends Screen {
         for (Runnable r : savers) r.run();
         setInt("guiScale", scaleIndex);
         setBool("enableMonitoring", listOn);
+        for (Flippers.Flipper f : Flippers.Flipper.values()) {
+            if (Flippers.on(f) != flipperOn[f.ordinal()]) BaseProfit.setFlipperOn(f, flipperOn[f.ordinal()]);
+        }
+        if (!Flippers.modeOn(listMode)) listMode = Flippers.nextMode(listMode, MODE_LABELS.length); // the chosen list was turned off
         BaseProfit.setListMode(listMode);
         saveConfig();
     }
@@ -215,7 +240,8 @@ public class FlipSettingsScreen extends Screen {
         g.text(font, "Flip List Settings", width / 2 - font.width("Flip List Settings") / 2, 14, 0xFFFFAA00, true);
         super.extractRenderState(g, mouseX, mouseY, delta);
         for (int i = 0; i < labels.size(); i++) {
-            boolean header = labels.get(i)[0].equals("WHAT IT SHOWS") || labels.get(i)[0].equals("HOW IT LOOKS");
+            boolean header = labels.get(i)[0].equals("WHAT IT SHOWS") || labels.get(i)[0].equals("HOW IT LOOKS")
+                    || labels.get(i)[0].startsWith("FLIPPERS");
             g.text(font, labels.get(i)[0], labelPos.get(i)[0], labelPos.get(i)[1],
                     header ? 0xFF55FFFF : 0xFFBBBBBB, true);
         }

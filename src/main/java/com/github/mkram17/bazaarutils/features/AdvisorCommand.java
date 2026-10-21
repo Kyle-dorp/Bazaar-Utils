@@ -52,6 +52,10 @@ public final class AdvisorCommand {
 
     /** Reads every list on the client thread (the purse is on the scoreboard), plans off it, prints back on it. */
     private static void showPlan() {
+        if (!Flippers.on(Flippers.Flipper.ADVISOR)) {
+            PlayerActionUtil.notifyAll("The advisor is turned off in /bazaarflip (Flippers: Advisor).");
+            return;
+        }
         Minecraft mc = Minecraft.getInstance();
         AdvisorConfig c = config;
         OpportunityFeed.Options options = OpportunityFeed.gather(c);

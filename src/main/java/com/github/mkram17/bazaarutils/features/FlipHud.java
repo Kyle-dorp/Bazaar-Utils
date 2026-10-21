@@ -141,9 +141,27 @@ public class FlipHud {
         return Math.max(1, cfgInt("bazaarGuiTopItemsByPercentageCount") + cfgInt("bazaarGuiTopItemsByMoneyCount"));
     }
 
-    /** BazaarFlip's flips (or dips) plus book crafting flips, in one list ranked by profit per hour. */
+    // the rows a list showed (and, in forge mode, which forge row each one is), so a pause can keep them exactly as drawn
+    private record Shown(List<Row> rows, List<ForgeCalc.Row> forge) { }
+
+    /** The list for a mode: live, or frozen as last drawn while {@link FlipPause paused} (a new search re-filters once). */
     private static List<Row> rows(int mode) {
+        Shown shown = FlipPause.hold("list" + mode, queries[mode], () -> {
+            List<Row> live = liveRows(mode);
+            return new Shown(live, mode == 3 ? forgeRowsShown : null);
+        });
+        if (shown.forge() != null) forgeRowsShown = shown.forge();
+        return shown.rows();
+    }
+
+    /** BazaarFlip's flips (or dips) plus book crafting flips, in one list ranked by profit per hour. */
+    private static List<Row> liveRows(int mode) {
         List<Row> out = new ArrayList<>();
+        java.util.Set<Flippers.Flipper> on = Flippers.feeding(mode); // flippers turned off in /bazaarflip compute nothing
+        if (on.isEmpty()) {
+            if (mode == 3) forgeRowsShown = List.of();
+            return out;
+        }
         if (mode == 3) {
             ForgeCalc.refreshIfStale();
             int slots = BaseProfit.getForgeSlots();
@@ -188,7 +206,7 @@ public class FlipHud {
             return out;
         }
         boolean dips = mode == 1;
-        for (BazaarFlipRows.Row it : BazaarFlipRows.get()) {
+        for (BazaarFlipRows.Row it : on.contains(dips ? Flippers.Flipper.DIPS : Flippers.Flipper.FLIPS) ? BazaarFlipRows.get() : List.<BazaarFlipRows.Row>of()) {
             String id = it.id();
             String third = "§6Profit: §r" + coins(it.profit()) + " §e(" + String.format("%.1f", it.profitMargin()) + "%)"
                     + " §7Cost: §r" + coins(it.totalBuyCost());
@@ -202,7 +220,7 @@ public class FlipHud {
             out.add(new Row(ItemNames.of(id), it.totalProfit(),
                     "§7Buy: §r" + coins(it.buyPrice()) + " §7| §aSell: §r" + coins(it.sellPrice()), third, ItemNames.of(id)));
         }
-        if (!dips) {
+        if (!dips && on.contains(Flippers.Flipper.BOOKS)) {
             BookCraft.refreshIfStale();
             for (BookCraft.Craft c : BookCraft.get()) {
                 out.add(new Row(c.title() + " §d[craft]", c.perHour(),
@@ -219,7 +237,14 @@ public class FlipHud {
     // ---- rendering (called from the patched HudRenderer.renderOverlay) ----
 
     public static void render(GuiGraphicsExtractor g, int mouseX, int mouseY) {
-        render(g, mouseX, mouseY, BaseProfit.getListMode());
+        int mode = BaseProfit.getListMode();
+        if (!Flippers.modeOn(mode)) {
+            int next = Flippers.nextMode(mode, MODE_NAMES.length);
+            if (next == mode) return; // every list is turned off
+            BaseProfit.setListMode(next);
+            mode = next;
+        }
+        render(g, mouseX, mouseY, mode);
     }
 
     /** Draws the list in a given mode (0 flips, 1 dips, 2 fusions, 3 forge), regardless of the saved mode. */
@@ -294,6 +319,7 @@ public class FlipHud {
         };
         String q = queries[mode];
         if (!q.isEmpty()) heading += " §r§7\"" + q + "\"";
+        if (FlipPause.paused()) heading = "§c§lPAUSED §r" + heading;
         String range = items.isEmpty() ? "" : (scroll + 1) + "-" + (scroll + visible) + " / " + items.size();
         g.text(font, fit(font, heading, WIDTH - 16 - font.width(range)), x + 6, y + 7, textColor, true);
         if (!items.isEmpty()) {
@@ -301,7 +327,8 @@ public class FlipHud {
         }
 
         if (items.isEmpty()) {
-            g.text(font, q.isEmpty() ? "§7No active flips found." : fit(font, "§7No " + MODE_NOUN[mode] + " matching \"" + q + "\".", WIDTH - 12),
+            g.text(font, !Flippers.modeOn(mode) ? "§7Turned off in /bazaarflip (Flippers)."
+                    : q.isEmpty() ? "§7No active flips found." : fit(font, "§7No " + MODE_NOUN[mode] + " matching \"" + q + "\".", WIDTH - 12),
                     x + 6, y + TITLE_H + 8, textColor, true);
         } else {
             for (int i = 0; i < visible; i++) {
@@ -337,8 +364,10 @@ public class FlipHud {
             if (!(screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)) return;
             if (!screen.getTitle().getString().replaceAll("§.", "").contains("Fusion")) return;
             ScreenEvents.afterExtract(screen).register((s, g, mouseX, mouseY, delta) -> {
-                render(g, mouseX, mouseY, 2);
-                renderFusionPotential(g);
+                boolean list = Flippers.on(Flippers.Flipper.FUSIONS), panel = Flippers.on(Flippers.Flipper.POTENTIAL);
+                if (!list && !panel) return;
+                render(g, mouseX, mouseY, 2); // a one-line "turned off" box when only the panel is on: the panel sits under it
+                if (panel) renderFusionPotential(g);
             });
         });
     }
@@ -348,6 +377,7 @@ public class FlipHud {
     }
 
     private static final int POTENTIAL_ROWS = 15;
+    private record Potential(FusionPotential.Plan plan, ShardPotential.Source source, boolean pricesLoading) { }
     private static int potentialScroll;
     // last drawn bounds of the potential panel in screen pixels, for scrolling it
     private static volatile int potLeft, potTop, potRight, potBottom;
@@ -362,14 +392,16 @@ public class FlipHud {
         if (mc.player == null || boundsRight <= boundsLeft) return;
         Font font = mc.font;
         float s = scale();
-        FusionPotential.Plan plan = ShardPotential.get();
+        Potential pot = FlipPause.hold("potential", null,
+                () -> new Potential(ShardPotential.get(), ShardPotential.source(), ShardPotential.pricesLoading()));
+        FusionPotential.Plan plan = pot.plan();
         List<String> head = new ArrayList<>(), rows = new ArrayList<>();
-        head.add("§l§dFuse your Hunting Box §r§8(SkyHanni counts)");
-        switch (ShardPotential.source()) {
+        head.add((FlipPause.paused() ? "§c§lPAUSED §r" : "") + "§l§dFuse your Hunting Box §r§8(SkyHanni counts)");
+        switch (pot.source()) {
             case NO_SKYHANNI -> head.add("§7Needs SkyHanni to read your Hunting Box.");
             case NOT_SEEN_YET -> head.add("§7Open your Hunting Box once so SkyHanni can count it.");
             default -> {
-                if (ShardPotential.pricesLoading()) head.add("§7Loading prices...");
+                if (pot.pricesLoading()) head.add("§7Loading prices...");
                 else if (plan.fusions().isEmpty()) head.add("§7Nothing profitable to fuse from what you have.");
             }
         }
@@ -410,7 +442,9 @@ public class FlipHud {
         ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
             if (!(screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)) return;
             if (!screen.getTitle().getString().replaceAll("§.", "").contains("The Forge")) return;
-            ScreenEvents.afterExtract(screen).register((s, g, mouseX, mouseY, delta) -> render(g, mouseX, mouseY, 3));
+            ScreenEvents.afterExtract(screen).register((s, g, mouseX, mouseY, delta) -> {
+                if (Flippers.on(Flippers.Flipper.FORGE)) render(g, mouseX, mouseY, 3);
+            });
         });
     }
 
@@ -521,6 +555,31 @@ public class FlipHud {
     private static final KeyMapping modeKey = new KeyMapping("Cycle list: Flips / Dips / Fusions / Forge", InputConstants.Type.KEYSYM,
             GLFW.GLFW_KEY_Y, com.github.mkram17.bazaarutils.features.keybinds.ItemSearchHelper.CATEGORY);
 
+    private static final KeyMapping pauseKey = new KeyMapping("Pause flip list (freeze while fusing)", InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_U, com.github.mkram17.bazaarutils.features.keybinds.ItemSearchHelper.CATEGORY);
+
+    /** Pauses (or resumes) every list, panel and calculator; resuming refreshes once, right away. */
+    public static void setPaused(boolean pause) {
+        if (!FlipPause.set(pause, FlipHud::refreshAfterPause)) {
+            PlayerActionUtil.notifyAll(pause ? "Flip list is already paused." : "Flip list isn't paused.");
+            return;
+        }
+        PlayerActionUtil.notifyAll(pause
+                ? "§c§lFlip list PAUSED§r - nothing updates or re-sorts until you unpause (" + pauseKey.getTranslatedKeyMessage().getString() + " or /flippause)."
+                : "§a§lFlip list resumed§r - refreshing now.");
+    }
+
+    // BazaarFlip's checks were skipped while paused: run one now; the calculators refresh on the next frame if they're due
+    private static void refreshAfterPause() {
+        Thread t = new Thread(() -> {
+            try {
+                Class.forName(MOD).getMethod("performBazaarCheck").invoke(null);
+            } catch (Exception ignored) { }
+        }, "BazaarFlip-unpause-refresh");
+        t.setDaemon(true);
+        t.start();
+    }
+
     private static final String[] MODE_NAMES = {"FLIPS (stable spreads)", "DIPS (cheap vs 7-day normal)", "FUSIONS (attribute shards)",
             "FORGE (cheapest route per slot-hour)"};
 
@@ -529,11 +588,21 @@ public class FlipHud {
      * waiting for the next poll.
      */
     public static void toggleMode(Integer forceMode) {
-        int mode = forceMode != null ? forceMode : (BaseProfit.getListMode() + 1) % MODE_NAMES.length;
+        if (forceMode != null && !Flippers.modeOn(forceMode)) {
+            PlayerActionUtil.notifyAll("That list is turned off in /bazaarflip (Flippers).");
+            return;
+        }
+        int current = BaseProfit.getListMode();
+        int mode = forceMode != null ? forceMode : Flippers.nextMode(current, MODE_NAMES.length); // skips lists that are off
+        if (forceMode == null && !Flippers.modeOn(mode)) {
+            PlayerActionUtil.notifyAll("Every list is turned off in /bazaarflip (Flippers).");
+            return;
+        }
         BaseProfit.setListMode(mode);
         scroll = 0;
         PlayerActionUtil.notifyAll("List mode: " + MODE_NAMES[mode]);
         Thread t = new Thread(() -> {
+            if (FlipPause.paused()) return; // the new mode shows what's already loaded; nothing refreshes until unpaused
             try {
                 if (mode == 2) {
                     FusionCalc.refreshIfStale();
@@ -556,15 +625,26 @@ public class FlipHud {
     @RunOnInit
     public static void registerModeToggle() {
         KeyMappingHelper.registerKeyMapping(modeKey);
+        KeyMappingHelper.registerKeyMapping(pauseKey);
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (modeKey.consumeClick()) {
                 if (client.player != null && com.github.mkram17.bazaarutils.utils.VersionCompat.getScreen(client) == null) toggleMode(null);
             }
+            while (pauseKey.consumeClick()) {
+                if (client.player != null && com.github.mkram17.bazaarutils.utils.VersionCompat.getScreen(client) == null) setPaused(!FlipPause.paused());
+            }
         });
         ScreenEvents.AFTER_INIT.register((client, screen, w, h) ->
                 ScreenKeyboardEvents.afterKeyPress(screen).register((s, keyEvent) -> {
-                    if (modeKey.matches(keyEvent) && screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>) toggleMode(null);
+                    if (!(screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)) return;
+                    if (modeKey.matches(keyEvent)) toggleMode(null);
+                    if (pauseKey.matches(keyEvent)) setPaused(!FlipPause.paused()); // works inside the Fusion Machine
                 }));
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, buildContext) ->
+                dispatcher.register(ClientCommands.literal("flippause")
+                        .executes(ctx -> { setPaused(!FlipPause.paused()); return 1; })
+                        .then(ClientCommands.literal("on").executes(ctx -> { setPaused(true); return 1; }))
+                        .then(ClientCommands.literal("off").executes(ctx -> { setPaused(false); return 1; }))));
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, buildContext) ->
                 dispatcher.register(ClientCommands.literal("flipmode")
                         .executes(ctx -> { toggleMode(null); return 1; })

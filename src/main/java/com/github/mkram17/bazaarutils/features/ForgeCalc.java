@@ -288,6 +288,7 @@ public class ForgeCalc {
     }
 
     public static void refreshIfStale() {
+        if (FlipPause.paused() || !Flippers.on(Flippers.Flipper.FORGE)) return; // frozen while paused, nothing when off
         // the scoreboard can only be read on the client thread; other callers keep the last reading
         try {
             Minecraft mc = Minecraft.getInstance();
