@@ -39,7 +39,7 @@ class ExitGuardTest {
     }
 
     @Test
-    void nothingHappensWhileTheGameIsStillRunning() throws Exception {
+    void nothingHappensWhileTheGameIsStillRunning(@TempDir Path dir) throws Exception {
         CountDownLatch end = new CountDownLatch(1);
         Thread game = new Thread(() -> {
             try {
@@ -48,7 +48,7 @@ class ExitGuardTest {
         }, "Render thread");
         game.start();
         AtomicInteger exits = new AtomicInteger();
-        ExitGuard.start(game, 0, Path.of("unused.log"), exits::incrementAndGet);
+        ExitGuard.start(game, 0, dir.resolve("exit.log"), exits::incrementAndGet);
         Thread.sleep(200);
         assertEquals(0, exits.get(), "never exits before the game thread has ended");
         end.countDown();
