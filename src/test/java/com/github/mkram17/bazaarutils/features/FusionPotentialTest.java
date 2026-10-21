@@ -192,4 +192,36 @@ class FusionPotentialTest {
         plan();
         assertEquals(small, priceCalls, "10,000 more recipes you can't do cost no extra price lookups");
     }
+    /** The fusion min profit: a fusion below it is left out (its shards stay free for others), one at or above it is kept. */
+    @Test
+    void fusionsBelowTheMinProfitAreLeftOut() {
+        held.put("CHEAP", 10);
+        held.put("RICH", 10);
+        input.put("CHEAP", 100.0);
+        input.put("RICH", 100.0);
+        output.put("SMALL", 400.0); // 2 CHEAP -> SMALL: +200 each
+        output.put("BIG", 1300.0); // 2 RICH -> BIG: +1,100 each
+        recipes.add(new Recipe("CHEAP", 1, "CHEAP", 1, "SMALL", 1));
+        recipes.add(new Recipe("RICH", 1, "RICH", 1, "BIG", 1));
+
+        assertEquals(2, plan().fusions().size(), "no min: both");
+        FusionPotential.Plan p = FusionPotential.plan(held, recipes, prices, 1000);
+        assertEquals(1, p.fusions().size());
+        assertEquals("BIG", p.fusions().get(0).recipe().output(), "the +1,100 fusion is kept");
+        assertEquals(5 * 1100, p.total(), 1e-9);
+        assertEquals(10, p.shardsUsed(), "the CHEAP shards aren't counted as used");
+        assertEquals(1, FusionPotential.plan(held, recipes, prices, 1100).fusions().size(), "exactly at the min is kept");
+        assertEquals(0, FusionPotential.plan(held, recipes, prices, 1100.01).fusions().size());
+    }
+
+    @Test
+    void zeroFusionMinFallsBackToTheSharedMin() {
+        assertEquals(10_000, FusionPotential.minProfit(0, 10_000), "unset: the shared min profit per item");
+        assertEquals(250_000, FusionPotential.minProfit(250_000, 10_000), "set: the fusion min, even above the shared one");
+        assertEquals(5_000, FusionPotential.minProfit(5_000, 10_000), "set: the fusion min, even below the shared one");
+        assertFalse(FusionPotential.worthIt(9_999, FusionPotential.minProfit(0, 10_000)));
+        assertTrue(FusionPotential.worthIt(10_000, FusionPotential.minProfit(0, 10_000)));
+        assertFalse(FusionPotential.worthIt(-5, 0), "a losing fusion is never worth it, whatever the min");
+        assertFalse(FusionPotential.worthIt(0, 0));
+    }
 }

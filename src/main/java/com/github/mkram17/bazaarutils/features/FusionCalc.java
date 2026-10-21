@@ -155,7 +155,7 @@ public class FusionCalc {
             sell[k] = BazaarSnapshot.sellRate(p);
         }
         double tax = BaseProfit.getTaxPercent() / 100.0;
-        double minProfit = BaseProfit.getCoins();
+        double minProfit = BaseProfit.fusionMinProfit(); // the fusion-only min, or the shared one when that's unset
         double minRate = BaseProfit.getMinItemsPerHour();
 
         // the same 7-day average check as the flip list, done once per shard (catches bought-out or dumped shards)
@@ -175,7 +175,7 @@ public class FusionCalc {
             if (!bidOk[l] || !bidOk[rt] || !askOk[o]) continue;
             double cost = lc * bid[l] + rc * bid[rt];
             double profit = oc * ask[o] * (1 - tax) - cost;
-            if (profit <= 0 || profit < minProfit) continue;
+            if (!FusionPotential.worthIt(profit, minProfit)) continue;
             double fusionsPerHour = Math.min(Math.min(fill[l] / lc, fill[rt] / rc), sell[o] / oc);
             if (fusionsPerHour * oc < minRate || fusionsPerHour <= 0) continue;
             double perHour = profit * fusionsPerHour;

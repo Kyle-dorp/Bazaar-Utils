@@ -47,7 +47,7 @@ public class BazaarSnapshot {
     /** Items per hour sold instantly into buy orders (how fast your buy orders fill), from the 7-day volume. */
     public static double fillRate(JsonObject product) {
         try {
-            return product.getAsJsonObject("quick_status").get("sellMovingWeek").getAsDouble() / 168.0;
+            return MarketShift.perHour(product.getAsJsonObject("quick_status"), "sellMovingWeek"); // weekly / 168, or a provable 24h surge
         } catch (Exception e) {
             return 0;
         }
@@ -56,7 +56,7 @@ public class BazaarSnapshot {
     /** Items per hour bought instantly from sell offers (how fast your sell offers fill), from the 7-day volume. */
     public static double sellRate(JsonObject product) {
         try {
-            return product.getAsJsonObject("quick_status").get("buyMovingWeek").getAsDouble() / 168.0;
+            return MarketShift.perHour(product.getAsJsonObject("quick_status"), "buyMovingWeek"); // weekly / 168, or a provable 24h surge
         } catch (Exception e) {
             return 0;
         }

@@ -84,7 +84,7 @@ public class BookCraft {
             if (bid <= 0 && ask <= 0) continue;
             int tier = Integer.parseInt(m.group(2));
             families.computeIfAbsent(m.group(1), k -> new TreeMap<>()).put(tier, new Tier(e.getKey(), tier, bid, ask,
-                    week(qs, "sellMovingWeek") / 168.0, week(qs, "buyMovingWeek") / 168.0));
+                    MarketShift.perHour(qs, "sellMovingWeek"), MarketShift.perHour(qs, "buyMovingWeek")));
         }
 
         loadOverrides();

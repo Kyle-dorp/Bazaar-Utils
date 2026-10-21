@@ -17,7 +17,7 @@ import java.util.concurrent.Executors;
 final class ShardPotential {
     enum Source { OK, NO_SKYHANNI, NOT_SEEN_YET }
 
-    private record Key(Map<String, Integer> held, int pricesId) { }
+    private record Key(Map<String, Integer> held, int pricesId, double minProfit) { }
 
     private static final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "BazaarFlip-shard-potential");
@@ -43,7 +43,7 @@ final class ShardPotential {
         fetchPricesIfFusionsOff();
         JsonObject products = BazaarSnapshot.cachedProducts();
         if (h.isEmpty() || products == null) return FusionPotential.EMPTY;
-        return plan.get(new Key(h, System.identityHashCode(products)));
+        return plan.get(new Key(h, System.identityHashCode(products), BaseProfit.fusionMinProfit()));
     }
 
     private static volatile long pricesFetchedAt;
@@ -72,7 +72,7 @@ final class ShardPotential {
 
     private static FusionPotential.Plan compute(Key k) {
         return FusionPotential.plan(k.held(), FusionCalc.recipesUsing(k.held().keySet()),
-                FusionCalc.cachedPrices(BaseProfit.getTaxPercent() / 100.0));
+                FusionCalc.cachedPrices(BaseProfit.getTaxPercent() / 100.0), k.minProfit());
     }
 
     /**

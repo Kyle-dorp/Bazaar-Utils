@@ -35,6 +35,7 @@ public class BaseProfit {
         try {
             JsonObject o = new JsonObject();
             o.addProperty("minProfitPerItem", coins);
+            o.addProperty("minFusionProfit", fusionMin);
             o.addProperty("sellTaxPercent", taxPercent);
             o.addProperty("minItemsPerHour", minItemsPerHour);
             o.addProperty("maxVsWeekAveragePercent", avgTolerance);
@@ -230,17 +231,24 @@ public class BaseProfit {
         save();
     }
 
-    /** How far below its 7-day normal the buy price is, in percent (negative if above), or NaN if history isn't loaded. */
+    /**
+     * How far below its normal the buy price is, in percent (negative if above), or NaN if history isn't loaded. Normal is the
+     * 7-day median, or the last 24 hours' when that is lower (MarketShift.normalBid): a level held all day isn't a dip.
+     */
     public static double dipPercent(String id, double buyPrice) {
         Average a = averages.get(id);
         if (a == null || a.failed() || a.medianSell() <= 0) return Double.NaN;
+        MarketShift s = MarketShift.of(id);
+        if (s != null) return s.dipPercent(buyPrice);
         return (a.medianSell() - buyPrice) / a.medianSell() * 100.0;
     }
 
-    /** The item's typical 7-day buy price (what the top buy order normally is), or NaN. */
+    /** The item's typical buy price (what the top buy order normally is, see {@link #dipPercent}), or NaN. */
     public static double typicalBuy(String id) {
         Average a = averages.get(id);
-        return a == null || a.failed() ? Double.NaN : a.medianSell();
+        if (a == null || a.failed()) return Double.NaN;
+        MarketShift s = MarketShift.of(id);
+        return s != null ? s.normalBid() : a.medianSell();
     }
 
     private static volatile int visibleRows = loadVisibleRows();
@@ -333,6 +341,7 @@ public class BaseProfit {
                         if (o.has("buy") && o.get("buy").getAsDouble() > 0) buys.add(o.get("buy").getAsDouble());
                         if (o.has("sell") && o.get("sell").getAsDouble() > 0) sells.add(o.get("sell").getAsDouble());
                     }
+                    MarketShift.store(id, arr); // the last 24 hours vs the 7 days, from this same download
                 }
                 result = buys.size() >= 6 && sells.size() >= 6
                         ? new Average(median(buys), median(sells), System.currentTimeMillis(), false)
@@ -361,6 +370,8 @@ public class BaseProfit {
         }
         if (a.failed()) return !dipMode; // in dip mode an unverified item is not a dip
         double tol = (avgTolerance > 0 ? avgTolerance : 25) / 100.0;
+        MarketShift s = MarketShift.of(id); // a market that moved and held: its new level is normal (null = 7-day rules)
+        if (s != null) return dipMode ? s.isDip(buyPrice, sellPrice, minDipPercent, tol) : s.bandOk(buyPrice, sellPrice, tol);
         if (dipMode) {
             // cheap to buy (buy price well under its normal) but the sell price is still believable
             return buyPrice <= a.medianSell() * (1 - minDipPercent / 100.0) && sellPrice <= a.medianBuy() * (1 + tol);
@@ -382,6 +393,8 @@ public class BaseProfit {
         }
         if (a.failed()) return true;
         double tol = avgTolerance / 100.0;
+        MarketShift s = MarketShift.of(id);
+        if (s != null) return s.priceOk(price, isAsk, tol);
         return isAsk ? price <= a.medianBuy() * (1 + tol) : price >= a.medianSell() * (1 - tol);
     }
 
@@ -414,7 +427,7 @@ public class BaseProfit {
     /** Called by the patched BazaarFlip: true if the flip fills at least the minimum items per hour (slower side of 7-day volume). */
     public static boolean passesRate(JsonObject quickStatus) {
         if (minItemsPerHour <= 0) return true;
-        return Math.min(week(quickStatus, "buyMovingWeek"), week(quickStatus, "sellMovingWeek")) / 168.0 >= minItemsPerHour;
+        return Math.min(MarketShift.perHour(quickStatus, "buyMovingWeek"), MarketShift.perHour(quickStatus, "sellMovingWeek")) >= minItemsPerHour;
     }
 
     private static volatile double taxPercent = loadTax();
@@ -461,7 +474,7 @@ public class BaseProfit {
      * fill for a flip to complete. Multiplied by profit per item (already after tax) that is profit per hour.
      */
     public static double profitPerHour(com.google.gson.JsonObject quickStatus, double profitPerItem) {
-        double perHour = Math.min(week(quickStatus, "buyMovingWeek"), week(quickStatus, "sellMovingWeek")) / 168.0;
+        double perHour = Math.min(MarketShift.perHour(quickStatus, "buyMovingWeek"), MarketShift.perHour(quickStatus, "sellMovingWeek"));
         return profitPerItem * perHour;
     }
 
@@ -525,6 +538,21 @@ public class BaseProfit {
                                 PlayerActionUtil.notifyAll("Bazaar sell tax set to " + format(taxPercent) + "%.");
                                 return 1;
                             })));
+            dispatcher.register(ClientCommands.literal("flipfusionmin")
+                        .executes(ctx -> {
+                            PlayerActionUtil.notifyAll(fusionMin <= 0
+                                    ? "Fusion min profit not set: fusions use the shared min (" + format(coins) + "). Use /flipfusionmin <coins>."
+                                    : "Fusion min profit: " + format(fusionMin) + " coins per fusion.");
+                            return 1;
+                        })
+                        .then(ClientCommands.argument("coins", DoubleArgumentType.doubleArg(0))
+                                .executes(ctx -> {
+                                    setFusionMin(DoubleArgumentType.getDouble(ctx, "coins"));
+                                    PlayerActionUtil.notifyAll(fusionMin <= 0
+                                            ? "Fusion min profit cleared: fusions use the shared min (" + format(coins) + ") again."
+                                            : "Fusion min profit set to " + format(fusionMin) + " coins per fusion.");
+                                    return 1;
+                                })));
             dispatcher.register(ClientCommands.literal("flipprofit")
                         .executes(ctx -> {
                             PlayerActionUtil.notifyAll(coins <= 0
@@ -546,6 +574,24 @@ public class BaseProfit {
 
     public static double getCoins() {
         return coins;
+    }
+
+    // min profit per whole shard fusion; 0 = use the shared min profit per item
+    private static volatile double fusionMin = Math.max(0, loadDouble("minFusionProfit", 0));
+
+    /** The fusion-only minimum as set (0 = not set). */
+    public static double getFusionMin() {
+        return fusionMin;
+    }
+
+    public static void setFusionMin(double value) {
+        fusionMin = Math.max(0, value);
+        save();
+    }
+
+    /** The minimum profit per fusion in force: the fusion-only one if set, else the shared min profit per item. */
+    public static double fusionMinProfit() {
+        return FusionPotential.minProfit(fusionMin, coins);
     }
 
     public static void setCoins(double value) {

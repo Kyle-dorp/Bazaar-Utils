@@ -33,6 +33,16 @@ final class FusionPotential {
 
     static final Plan EMPTY = new Plan(List.of(), 0, 0, 0);
 
+    /** The fusion minimum in force: the fusion-only setting when it's set (above 0), else the shared min profit per item. */
+    static double minProfit(double fusionMin, double sharedMin) {
+        return fusionMin > 0 ? fusionMin : sharedMin;
+    }
+
+    /** Whether a whole fusion's profit (the "= profit" on its row) is worth showing: positive and at least {@code min}. */
+    static boolean worthIt(double profit, double min) {
+        return profit > 0 && profit >= min;
+    }
+
     private static double memo(Map<String, Double> cache, String id, java.util.function.ToDoubleFunction<String> f) {
         Double v = cache.get(id);
         if (v == null) {
@@ -47,6 +57,11 @@ final class FusionPotential {
      * @param recipes recipes to consider (all, or only those using shards you hold: anything else is skipped anyway)
      */
     static Plan plan(Map<String, Integer> held, Collection<Recipe> recipes, Prices prices) {
+        return plan(held, recipes, prices, 0);
+    }
+
+    /** As {@link #plan(Map, Collection, Prices)}, leaving out fusions that make less than {@code minProfit} each. */
+    static Plan plan(Map<String, Integer> held, Collection<Recipe> recipes, Prices prices, double minProfit) {
         Map<String, Double> in = new HashMap<>(), out = new HashMap<>();
         record Candidate(Recipe recipe, double profitEach) { }
         List<Candidate> candidates = new ArrayList<>();
@@ -57,7 +72,7 @@ final class FusionPotential {
             double vl = memo(in, r.left(), prices::input), vr = memo(in, r.right(), prices::input), vo = memo(out, r.output(), prices::output);
             if (!(vl > 0) || !(vr > 0) || !(vo > 0)) continue;
             double profitEach = r.outputCount() * vo - r.leftCount() * vl - r.rightCount() * vr;
-            if (profitEach > 0) candidates.add(new Candidate(r, profitEach));
+            if (worthIt(profitEach, minProfit)) candidates.add(new Candidate(r, profitEach));
         }
         candidates.sort((a, b) -> {
             int c = Double.compare(b.profitEach(), a.profitEach());

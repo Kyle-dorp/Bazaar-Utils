@@ -2,8 +2,7 @@ package com.github.mkram17.bazaarutils.utils;
 
 import java.time.*;
 
-import javax.swing.Timer;
-
+import com.github.mkram17.bazaarutils.BazaarUtils;
 import com.github.mkram17.bazaarutils.misc.autoregistration.RunOnInit;
 import lombok.Getter;
 
@@ -25,11 +24,7 @@ public class TimeUtil {
     @RunOnInit
     public static void startTimer() {
         updateTime();
-        Timer timer = new Timer(10 * 1000, e -> {
-            updateTime();
-        });
-
-        timer.setRepeats(true);
-        timer.start();
+        // on the mod's daemon scheduler: a javax.swing.Timer fires on AWT's event thread, which is not a daemon thread
+        BazaarUtils.BUExecutorService.scheduleAtFixedRate(TimeUtil::updateTime, 10, 10, java.util.concurrent.TimeUnit.SECONDS);
     }
 }

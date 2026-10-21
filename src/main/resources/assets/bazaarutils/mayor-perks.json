@@ -1,0 +1,43 @@
+{
+  "_about": "Which Bazaar items each mayor perk moves, for the flip list's perk badges (MayorPerks). Perk names match the Hypixel election API (/v2/resources/skyblock/election), compared ignoring case. A copy at .minecraft/config/bazaarutils-mayor-perks.json replaces this file. Checked against the wiki and the live Bazaar product list on 2026-10-18.",
+  "perkpocalypse": {
+    "_about": "Jerry's Perkpocalypse: every 6 hours from the election end, all perks of one of these mayors, in an order picked at random each Jerry term that then repeats every 36 hours. Grand Feast is never activated by Jerry.",
+    "slotHours": 6,
+    "excludedPerks": ["Grand Feast"],
+    "mayors": {
+      "Aatrox": ["SLASHED Pricing", "Slayer XP Buff", "Pathfinder"],
+      "Cole": ["Prospection", "Mining XP Buff", "Mining Fiesta", "Molten Forge"],
+      "Diana": ["Huntress' Intuition", "Mythological Ritual", "Pet XP Buff", "Sharing is Caring"],
+      "Finnegan": ["Pest Eradicator", "GOATed", "Blooming Business", "Grand Feast"],
+      "Marina": ["Fishing XP Buff", "Luck of the Sea 2.0", "Fishing Festival", "Double Trouble"],
+      "Paul": ["Marauder", "EZPZ", "Benediction"]
+    }
+  },
+  "groups": [
+    {"perks": ["Jerrypocalypse"], "effect": "supply", "note": "hidden Jerries drop Jerry Boxes",
+     "items": ["JERRY_BOX_GREEN", "JERRY_BOX_BLUE", "JERRY_BOX_PURPLE", "JERRY_BOX_GOLDEN", "JERRY_STONE"]},
+    {"perks": ["Mining Fiesta"], "effect": "supply", "note": "mining drops Refined Mineral and Glossy Gemstone",
+     "items": ["REFINED_MINERAL", "GLOSSY_GEMSTONE"]},
+    {"perks": ["Molten Forge"], "effect": "faster", "note": "forges take 25% less time", "lists": ["forge"]},
+    {"perks": ["Mythological Ritual"], "effect": "supply", "note": "Diana's burrows and mythological creatures",
+     "items": ["GRIFFIN_FEATHER", "BRAIDED_GRIFFIN_FEATHER", "MYTHOS_FRAGMENT", "ANCIENT_CLAW", "ENCHANTED_ANCIENT_CLAW",
+               "ENCHANTMENT_ULTIMATE_CHIMERA_1", "SHARD_MINOS_HUNTER", "SHARD_CRETAN_BULL", "SHARD_HARPY", "SHARD_MINOTAUR",
+               "SHARD_SPHINX", "SHARD_KING_MINOS"]},
+    {"perks": ["SLASHED Pricing", "Slayer XP Buff", "Pathfinder"], "effect": "supply", "note": "more slayer bosses, more rare drops",
+     "items": ["REVENANT_FLESH", "REVENANT_VISCERA", "FOUL_FLESH", "UNDEAD_CATALYST", "TARANTULA_WEB", "TARANTULA_SILK",
+               "TOXIC_ARROW_POISON", "SPIDER_CATALYST", "WOLF_TOOTH", "GOLDEN_TOOTH", "WEAK_WOLF_CATALYST", "NULL_SPHERE",
+               "NULL_OVOID", "NULL_ATOM", "DERELICT_ASHE"]},
+    {"perks": ["Fishing Festival"], "effect": "supply", "note": "shark loot",
+     "items": ["SHARK_FIN", "ENCHANTED_SHARK_FIN", "NURSE_SHARK_TOOTH", "BLUE_SHARK_TOOTH", "TIGER_SHARK_TOOTH", "GREAT_WHITE_SHARK_TOOTH"]},
+    {"perks": ["Marauder"], "effect": "supply", "note": "dungeon reward chests 20% cheaper, more of them opened",
+     "items": ["RECOMBOBULATOR_3000", "FUMING_POTATO_BOOK", "HOT_POTATO_BOOK"]},
+    {"perks": ["Blooming Business"], "effect": "supply", "note": "garden visitors reward Fine Flour",
+     "items": ["FINE_FLOUR"]},
+    {"perks": ["Stock Exchange"], "effect": "supply", "note": "Stonks Auction",
+     "items": ["STOCK_OF_STONKS"]},
+    {"perks": ["Sweet Benevolence"], "effect": "supply", "note": "+30% candy and gifts during their events",
+     "items": ["GREEN_CANDY", "PURPLE_CANDY", "WHITE_GIFT", "GREEN_GIFT", "RED_GIFT"]},
+    {"perks": ["A Time for Giving"], "effect": "supply", "note": "Party Gifts",
+     "items": ["PARTY_GIFT"]}
+  ]
+}

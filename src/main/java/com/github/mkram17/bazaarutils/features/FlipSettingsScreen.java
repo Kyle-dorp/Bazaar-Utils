@@ -176,6 +176,8 @@ public class FlipSettingsScreen extends Screen {
                 setInt("bazaarGuiTopItemsByMoneyCount", 0);
             } catch (NumberFormatException ignored) { }
         });
+        label(right, top + 7 * ROW_H - 10, "Min fusion profit (0 = shared)");
+        numberDouble(right, top + 7 * ROW_H, "Min fusion profit", BaseProfit.getFusionMin(), BaseProfit::setFusionMin);
         numberInt(right, top + 4 * ROW_H, "X", "guiX", Integer.MIN_VALUE);
         numberInt(right, top + 5 * ROW_H, "Y", "guiY", Integer.MIN_VALUE);
 

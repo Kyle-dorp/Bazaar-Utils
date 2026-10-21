@@ -19,7 +19,8 @@ public final class Flippers {
         FUSIONS("Fusions", "Shard fusions list"),
         POTENTIAL("Panel", "Fusion Machine panel: what you could fuse from your Hunting Box"),
         FORGE("Forge", "Forge routes list"),
-        ADVISOR("Advisor", "/advisor plan");
+        ADVISOR("Advise", "/advisor plan"),
+        MAYOR("Mayor", "Mayor events: 24h shift checks (dips, the 7-day filter, profit/hr) and perk badges; off = 7-day numbers only");
 
         public final String label, description;
 

@@ -154,6 +154,14 @@ public class FlipHud {
         return shown.rows();
     }
 
+    /**
+     * Title badges for an item (never on Row.name, which search matches): the active mayor perk that moves it and a confirmed
+     * 24-hour shift or faster fills. Map lookups on cached data, safe every frame; nothing with the Mayor flipper off.
+     */
+    private static String badges(String id) {
+        return MayorWatch.badges(id, MayorCommand::watch, BazaarSnapshot.cachedProducts());
+    }
+
     /** BazaarFlip's flips (or dips) plus book crafting flips, in one list ranked by profit per hour. */
     private static List<Row> liveRows(int mode) {
         List<Row> out = new ArrayList<>();
@@ -196,7 +204,7 @@ public class FlipHud {
             for (FlipSearch.FusionHit hit : hits.subList(0, Math.min(hits.size(), cap()))) {
                 FusionCalc.Fusion f = hit.fusion();
                 String tag = hit.relation() == null ? "§7" : hit.relation() == FlipSearch.Relation.MAKES ? "§b[makes] §7" : "§3[uses] §7";
-                out.add(new Row(f.outputCount() + "x " + ItemNames.of(f.output()) + " §d[" + f.type().toLowerCase() + "]", f.perHour(),
+                out.add(new Row(f.outputCount() + "x " + ItemNames.of(f.output()) + " §d[" + f.type().toLowerCase() + "]" + badges(f.output()), f.perHour(),
                         tag + f.leftCount() + "x " + shardName(f.left()) + " + " + f.rightCount() + "x " + shardName(f.right()),
                         // whole-fusion totals: everything you sell (after tax) minus everything you buy
                         "§aSell §r" + coins(f.cost() + f.profit()) + " §7- Cost §r" + coins(f.cost())
@@ -217,13 +225,13 @@ public class FlipHud {
                             + "§7) §6+" + coins(it.profit());
                 }
             }
-            out.add(new Row(ItemNames.of(id), it.totalProfit(),
+            out.add(new Row(ItemNames.of(id) + badges(id), it.totalProfit(),
                     "§7Buy: §r" + coins(it.buyPrice()) + " §7| §aSell: §r" + coins(it.sellPrice()), third, ItemNames.of(id)));
         }
         if (!dips && on.contains(Flippers.Flipper.BOOKS)) {
             BookCraft.refreshIfStale();
             for (BookCraft.Craft c : BookCraft.get()) {
-                out.add(new Row(c.title() + " §d[craft]", c.perHour(),
+                out.add(new Row(c.title() + " §d[craft]" + badges(c.id()), c.perHour(),
                         "§7Buy §r" + c.units() + "x " + c.fromName() + " §7@ §r" + coins(c.bid()) + " §7| §aSell: §r" + coins(c.ask()),
                         "§6Profit: §r" + coins(c.profit()) + " §e(" + String.format("%.1f", c.profitMargin()) + "%) §7Cost: §r" + coins(c.cost()),
                         c.title() + " " + c.fromName()));
