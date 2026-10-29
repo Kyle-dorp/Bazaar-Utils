@@ -14,6 +14,13 @@ public final class ActiveRanking {
         return purse * (1 - Math.max(0, Math.min(100, reservePercent)) / 100);
     }
 
+    /** The budget rounded down to two significant figures, so coin pickups don't restart the ranking. */
+    public static double bucket(double budget) {
+        if (!(budget > 0) || !Double.isFinite(budget)) return 0;
+        double step = Math.pow(10, Math.floor(Math.log10(budget)) - 1);
+        return Math.floor(budget / step) * step;
+    }
+
     public static List<Pick> rank(List<Opportunity> options, double budget, double minutes, double combinesPerHour) {
         List<Pick> picks = new ArrayList<>();
         if (!(budget > 0) || !Double.isFinite(budget) || !(minutes > 0) || !Double.isFinite(minutes)) return picks;

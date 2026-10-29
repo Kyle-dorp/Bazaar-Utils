@@ -29,6 +29,15 @@ class ActiveRankingTest {
     }
 
     @Test
+    void bucketIgnoresSmallPurseChanges() {
+        assertEquals(13_000_000, ActiveRanking.bucket(13_540_864), 1e-6);
+        assertEquals(ActiveRanking.bucket(13_540_864), ActiveRanking.bucket(13_541_000));
+        assertEquals(950, ActiveRanking.bucket(957), 1e-9);
+        assertEquals(0, ActiveRanking.bucket(Double.NaN));
+        assertEquals(0, ActiveRanking.bucket(0));
+    }
+
+    @Test
     void budgetsEachAlternativeAtQuarterOfSpendablePurse() {
         var pick = ActiveRanking.rank(List.of(option("x", 10, 100, 10000)), 10000, 30, 150).getFirst();
         assertEquals(25, pick.quantity());

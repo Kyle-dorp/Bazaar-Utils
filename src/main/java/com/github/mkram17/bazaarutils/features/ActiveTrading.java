@@ -31,7 +31,7 @@ final class ActiveTrading {
     private ActiveTrading() { }
 
     static List<ActiveRanking.Pick> get(int mode, double purse) {
-        double budget = ActiveRanking.budget(purse, BaseProfit.getReservePercent());
+        double budget = ActiveRanking.bucket(ActiveRanking.budget(purse, BaseProfit.getReservePercent()));
         if (budget <= 0) {
             status[mode] = purse == 0 ? "No spendable purse" : "Purse unavailable; recommendations paused";
             return List.of();
@@ -44,8 +44,9 @@ final class ActiveTrading {
         CachedCompute<Input, Result> cache = caches.get(mode);
         Result result = cache.get(input);
         if (!input.equals(result.input())) {
+            // keep showing the last ranking (minus picks the new budget can't afford) until the new one is ready
             status[mode] = "Updating budget-aware estimates";
-            return List.of();
+            return result.picks().stream().filter(p -> p.cost() <= budget * 0.25).toList();
         }
         status[mode] = cache.failure() == null ? "Alternatives, not a portfolio; quote-based estimates" : "Refresh failed; cached estimates";
         return result.picks();

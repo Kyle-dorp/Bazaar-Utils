@@ -60,7 +60,7 @@ public class BaseProfit {
         } catch (Exception ignored) { }
     }
 
-    private static volatile boolean activeRanking = loadBool("activeRanking", true);
+    private static volatile boolean activeRanking = loadBool("activeRanking", false);
     private static volatile double reservePercent = bounded(loadDouble("reservePercent", 10), 0, 95, 10);
     private static volatile double targetMinutes = bounded(loadDouble("targetMinutes", 30), 5, 120, 30);
 
