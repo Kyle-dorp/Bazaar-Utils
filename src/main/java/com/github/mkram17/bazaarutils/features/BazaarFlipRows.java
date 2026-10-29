@@ -44,6 +44,10 @@ public final class BazaarFlipRows {
         return f;
     }
 
+    public static String warning() {
+        return fields() == null ? "BazaarFlip is missing or incompatible; flip results unavailable" : "";
+    }
+
     /** The rows BazaarFlip shows right now (flips or dips, whichever mode it's in). */
     public static List<Row> get() {
         Fields f = fields();

@@ -16,6 +16,9 @@
     "MixinSignEditScreen",
     "MixinSimpleContainer",
     "AccessorSkyBlockBazaarReply",
-    "MixinTooltipScroll"
+    "MixinTooltipScroll",
+    "MixinPacketCounter",
+    "MixinMouseInput",
+    "MixinKeyInput"
   ]
 }

@@ -34,6 +34,9 @@ public class BaseProfit {
     private static void save() {
         try {
             JsonObject o = new JsonObject();
+            o.addProperty("activeRanking", activeRanking);
+            o.addProperty("reservePercent", reservePercent);
+            o.addProperty("targetMinutes", targetMinutes);
             o.addProperty("minProfitPerItem", coins);
             o.addProperty("minFusionProfit", fusionMin);
             o.addProperty("sellTaxPercent", taxPercent);
@@ -56,6 +59,21 @@ public class BaseProfit {
             Files.writeString(FILE, new Gson().toJson(o));
         } catch (Exception ignored) { }
     }
+
+    private static volatile boolean activeRanking = loadBool("activeRanking", true);
+    private static volatile double reservePercent = bounded(loadDouble("reservePercent", 10), 0, 95, 10);
+    private static volatile double targetMinutes = bounded(loadDouble("targetMinutes", 30), 5, 120, 30);
+
+    private static double bounded(double value, double min, double max, double fallback) {
+        return Double.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
+    }
+
+    public static boolean isActiveRanking() { return activeRanking; }
+    public static double getReservePercent() { return reservePercent; }
+    public static double getTargetMinutes() { return targetMinutes; }
+    public static void setActiveRanking(boolean value) { activeRanking = value; save(); }
+    public static void setReservePercent(double value) { reservePercent = bounded(value, 0, 95, 10); save(); }
+    public static void setTargetMinutes(double value) { targetMinutes = bounded(value, 5, 120, 30); save(); }
 
     private static volatile boolean dipMode = loadBool("dipMode", false);
     private static volatile double minDipPercent = loadDouble("minDipPercent", 30);
@@ -299,7 +317,8 @@ public class BaseProfit {
     }
 
     public static void setTaxPercent(double value) {
-        taxPercent = Math.max(0, Math.min(100, value));
+        if (!Double.isFinite(value)) return;
+        taxPercent = Math.max(0, Math.min(99.99, value));
         save();
     }
 
@@ -436,7 +455,10 @@ public class BaseProfit {
         try {
             if (Files.exists(FILE)) {
                 JsonObject o = new Gson().fromJson(Files.readString(FILE), JsonObject.class);
-                if (o.has("sellTaxPercent")) return o.get("sellTaxPercent").getAsDouble();
+                if (o.has("sellTaxPercent")) {
+                    double value = o.get("sellTaxPercent").getAsDouble();
+                    if (Double.isFinite(value) && value >= 0 && value < 100) return value;
+                }
             }
         } catch (Exception ignored) { }
         return 1.25;
@@ -531,10 +553,9 @@ public class BaseProfit {
                         PlayerActionUtil.notifyAll("Bazaar sell tax for flips: " + format(taxPercent) + "%. Use /fliptax <percent> to change it.");
                         return 1;
                     })
-                    .then(ClientCommands.argument("percent", DoubleArgumentType.doubleArg(0, 100))
+                    .then(ClientCommands.argument("percent", DoubleArgumentType.doubleArg(0, 99.99))
                             .executes(ctx -> {
-                                taxPercent = DoubleArgumentType.getDouble(ctx, "percent");
-                                save();
+                                setTaxPercent(DoubleArgumentType.getDouble(ctx, "percent"));
                                 PlayerActionUtil.notifyAll("Bazaar sell tax set to " + format(taxPercent) + "%.");
                                 return 1;
                             })));

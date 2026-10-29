@@ -71,6 +71,18 @@ class FlipSearchTest {
         assertEquals(Relation.MAKES, hits.get(0).relation());
     }
 
+    @Test
+    void repeatedFusionIngredientsAreLookedUpOnlyOncePerSearch() {
+        Map<String, Integer> calls = new HashMap<>();
+        List<FusionCalc.Fusion> all = IntStream.range(0, 1000)
+                .mapToObj(i -> fusion("SHARD_BRAMBLE", "SHARD_FLITTER", "SHARD_HIDEONCAVE", i)).toList();
+        assertEquals(1000, FlipSearch.fusions("flitter", all, id -> {
+            calls.merge(id, 1, Integer::sum);
+            return SHARD_NAME.apply(id);
+        }).size());
+        assertEquals(Map.of("SHARD_BRAMBLE", 1, "SHARD_FLITTER", 1, "SHARD_HIDEONCAVE", 1), calls);
+    }
+
     // ---- forge ----
 
     private final Map<String, Recipe> recipes = new LinkedHashMap<>();

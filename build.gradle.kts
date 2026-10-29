@@ -1,3 +1,11 @@
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.util.HexFormat
+
 plugins {
     id("net.fabricmc.fabric-loom") version "1.17.16"
     id("maven-publish")
@@ -156,6 +164,48 @@ tasks {
         }
     }
 }
+tasks.register("installLocal") {
+    group = "build"
+    description = "Installs the tested local build with a rollback backup; requires -PminecraftModsDir."
+    dependsOn(tasks.build)
+    doLast {
+        val mods = Path.of(providers.gradleProperty("minecraftModsDir").get())
+        val backupDir = mods.parent.resolve("mods-backup")
+        val dist = rootProject.layout.projectDirectory.dir("dist").asFile.toPath()
+        require(Files.isDirectory(mods) && Files.isDirectory(backupDir) && Files.isDirectory(dist))
+        check(ProcessHandle.allProcesses().use { processes ->
+            processes.noneMatch { process ->
+                val command = process.info().command().orElse("").lowercase()
+                val args = process.info().commandLine().orElse("").lowercase()
+                (command.endsWith("javaw.exe") || command.endsWith("java.exe")) &&
+                    (args.contains("net.fabricmc.loader") || args.contains("net.minecraft"))
+            }
+        }) { "Close Minecraft before installing." }
+        val artifact = tasks.jar.get().archiveFile.get().asFile.toPath()
+        val target = mods.resolve(artifact.fileName)
+        require(Files.isRegularFile(target)) { "The installed BazaarUtils JAR was not found." }
+        val hash = { path: Path -> HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path))) }
+        val expected = hash(artifact)
+        val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS"))
+        val backup = backupDir.resolve("${target.fileName}.$stamp.bak")
+        Files.copy(target, backup)
+        val incoming = Files.createTempFile(backupDir, "bazaarutils-install-", ".incoming")
+        try {
+            Files.copy(artifact, incoming, StandardCopyOption.REPLACE_EXISTING)
+            check(hash(incoming) == expected) { "The incoming JAR failed verification." }
+            Files.copy(artifact, dist.resolve(artifact.fileName), StandardCopyOption.REPLACE_EXISTING)
+            val staged = dist.resolve("bazaarutils-staged.jar")
+            Files.copy(artifact, staged, StandardCopyOption.REPLACE_EXISTING)
+            Files.writeString(dist.resolve("bazaarutils-staged.jar.sha256"), expected + "\n")
+            Files.move(incoming, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            check(hash(target) == expected) { "The installed JAR failed verification; rollback backup: $backup" }
+            logger.lifecycle("Installed: $target\nRollback backup: $backup\nSHA-256: $expected")
+        } finally {
+            Files.deleteIfExists(incoming)
+        }
+    }
+}
+
 loom {
     runConfigs.all {
         ideConfigGenerated(true) // Run configurations are not created for subprojects by default

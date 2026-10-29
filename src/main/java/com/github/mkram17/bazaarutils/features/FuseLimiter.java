@@ -27,11 +27,11 @@ final class FuseLimiter {
     /** Whether a click in screen {@code title} on an item called {@code itemName} is a fuse click. */
     static boolean isFuseClick(String title, String itemName, boolean inMenu, boolean empty) {
         if (!inMenu || empty) return false;
-        String t = title.replaceAll("§.", "").toLowerCase();
+        String t = title.replaceAll("§.", "").toLowerCase(java.util.Locale.ROOT);
         if (!t.contains("fusion")) return false;
-        if (t.contains("confirm fusion")) return true;
-        String n = itemName.replaceAll("§.", "").toLowerCase();
-        return n.contains("fus") || n.contains("confirm");
+        String n = itemName.replaceAll("§.", "").toLowerCase(java.util.Locale.ROOT).trim();
+        return n.equals("fuse") || n.startsWith("fuse ") || n.equals("confirm")
+                || n.startsWith("confirm fusion") || n.startsWith("repeat previous fusion") || n.startsWith("repeat fusion");
     }
 
     void setLimits(long minIntervalMs, int maxPerWindow) {

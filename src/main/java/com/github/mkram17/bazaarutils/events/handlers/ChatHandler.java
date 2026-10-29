@@ -166,7 +166,7 @@ public class ChatHandler {
         boolean isSellOrder = siblings.get(2).getString().contains("Sell Offer Setup!");
         if (isSellOrder) {
             //the price calculated before is ignoring tax, so must be added to find the actual price (which is used in tooltips etc.)
-            price /= ((100 - BUConfig.get().bzTax) / 100);
+            price /= ((100 - com.github.mkram17.bazaarutils.features.BaseProfit.getTaxPercent()) / 100);
         }
 
         PriceInfoContainer.PriceType priceType = isSellOrder ? PriceInfoContainer.PriceType.INSTABUY : PriceInfoContainer.PriceType.INSTASELL;

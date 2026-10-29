@@ -4,7 +4,6 @@ import com.github.mkram17.bazaarutils.BazaarUtils;
 import com.github.mkram17.bazaarutils.data.BazaarData;
 import com.github.mkram17.bazaarutils.misc.autoregistration.RunOnInit;
 import com.github.mkram17.bazaarutils.mixin.AccessorAbstractContainerScreen;
-import com.github.mkram17.bazaarutils.utils.GUIUtils;
 import com.github.mkram17.bazaarutils.utils.PlayerActionUtil;
 import com.github.mkram17.bazaarutils.utils.VersionCompat;
 import com.mojang.blaze3d.platform.InputConstants;
@@ -29,6 +28,7 @@ import org.lwjgl.glfw.GLFW;
 public class ItemSearchHelper {
     public static final KeyMapping.Category CATEGORY = StashHelper.CATEGORY;
     private static final KeyMapping searchKey = new KeyMapping("Search Item (Bazaar or Auction House)", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_T, CATEGORY);
+    private static final com.github.mkram17.bazaarutils.features.MenuSearch requests = new com.github.mkram17.bazaarutils.features.MenuSearch(750);
 
     @RunOnInit
     public static void initializeKeybinds() {
@@ -45,17 +45,18 @@ public class ItemSearchHelper {
         ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
             if (!(screen instanceof AbstractContainerScreen<?> containerScreen)) return;
             ScreenKeyboardEvents.afterKeyPress(screen).register((s, keyEvent) -> {
-                if (!searchKey.matches(keyEvent)) return;
+                if (!searchKey.matches(keyEvent) || s.getFocused() instanceof net.minecraft.client.gui.components.EditBox) return;
                 Slot slot = ((AccessorAbstractContainerScreen) containerScreen).getHoveredSlot();
                 if (slot == null || !slot.hasItem()) return;
-                if (search(slot.getItem())) GUIUtils.closeHandledScreen();
+                search(slot.getItem());
             });
         });
     }
 
     /** Runs /bz if the item is a Bazaar product, otherwise /ah. */
     private static boolean search(ItemStack stack) {
-        if (stack.isEmpty()) return false;
+        Minecraft client = Minecraft.getInstance();
+        if (stack.isEmpty() || client.player == null) return false;
         CompoundTag tag = customData(stack);
 
         String name = enchantBookName(tag);
@@ -63,8 +64,9 @@ public class ItemSearchHelper {
         if (name.isBlank()) return false;
 
         String command = BazaarData.findProductIdOptional(name).isPresent() ? "bz" : "ahs";
-        PlayerActionUtil.runCommand(command + " " + name);
-        return true;
+        return requests.run(System.nanoTime() / 1_000_000, command + " " + name, () -> {
+            if (VersionCompat.getScreen(client) instanceof AbstractContainerScreen<?>) client.player.closeContainer();
+        }, PlayerActionUtil::runCommand);
     }
 
     private static CompoundTag customData(ItemStack stack) {

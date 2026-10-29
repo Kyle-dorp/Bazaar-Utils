@@ -56,7 +56,11 @@ class FuseLimiterTest {
     @Test
     void onlyFuseClicksInFusionScreensAreLimited() {
         assertTrue(FuseLimiter.isFuseClick("Confirm Fusion", "Fuse", true, false));
-        assertTrue(FuseLimiter.isFuseClick("§8Confirm Fusion", "anything", true, false), "every menu item in Confirm Fusion");
+        assertTrue(FuseLimiter.isFuseClick("§8Confirm Fusion", "Confirm", true, false));
+        assertFalse(FuseLimiter.isFuseClick("Confirm Fusion", "Cancel", true, false));
+        assertFalse(FuseLimiter.isFuseClick("Confirm Fusion", "Go Back", true, false));
+        assertFalse(FuseLimiter.isFuseClick("Confirm Fusion", "Close", true, false));
+        assertFalse(FuseLimiter.isFuseClick("Fusion Box", "Fusion Information", true, false));
         assertTrue(FuseLimiter.isFuseClick("Fusion Box", "§aRepeat Previous Fusion", true, false));
         assertFalse(FuseLimiter.isFuseClick("Fusion Box", "Lunar Moth Shard", true, false), "picking shards is not limited");
         assertFalse(FuseLimiter.isFuseClick("Confirm Fusion", "Fuse", false, false), "your own inventory is not limited");

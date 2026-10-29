@@ -10,11 +10,12 @@ import java.net.URI;
 /** One shared copy of the public Bazaar data for the book and fusion calculators, refetched at most every 30 seconds. */
 public class BazaarSnapshot {
     private static final long MAX_AGE_MS = 30_000;
-    private static JsonObject products;
-    private static long fetchedAt;
+    private static volatile JsonObject products;
+    private static volatile long fetchedAt;
+    private static volatile String refreshError;
 
     /** The last fetched products without fetching (null if never fetched): for code that must not wait on the network. */
-    public static synchronized JsonObject cachedProducts() {
+    public static JsonObject cachedProducts() {
         return products;
     }
 
@@ -25,11 +26,29 @@ public class BazaarSnapshot {
             c.setConnectTimeout(5000);
             c.setReadTimeout(15000);
             try (InputStream in = c.getInputStream()) {
-                products = JsonParser.parseString(new String(in.readAllBytes())).getAsJsonObject().getAsJsonObject("products");
+                JsonObject response = JsonParser.parseString(new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)).getAsJsonObject();
+                JsonObject updated = response.getAsJsonObject("products");
+                if (updated == null || (response.has("success") && !response.get("success").getAsBoolean())) {
+                    throw new java.io.IOException("Bazaar response did not contain successful market data");
+                }
+                fetchedAt = System.currentTimeMillis();
+                products = updated;
+                refreshError = null;
+            } catch (Exception e) {
+                refreshError = e.getClass().getSimpleName();
+                throw e;
+            } finally {
+                c.disconnect();
             }
-            fetchedAt = now;
         }
         return products;
+    }
+
+    public static String warning() {
+        if (products == null) return refreshError == null ? "Market prices loading" : "Market refresh failed: " + refreshError;
+        long age = Math.max(0, System.currentTimeMillis() - fetchedAt);
+        if (refreshError != null) return "Market refresh failed; cached prices " + age / 1000 + "s old";
+        return age > 90_000 ? "Stale market prices: " + age / 1000 + "s old" : "";
     }
 
     /** Top buy order (what you pay with a buy order), 0 if none. */

@@ -143,12 +143,23 @@ public class FlipHud {
 
     // the rows a list showed (and, in forge mode, which forge row each one is), so a pause can keep them exactly as drawn
     private record Shown(List<Row> rows, List<ForgeCalc.Row> forge) { }
+    private static final Shown[] rowCache = new Shown[4];
+    private static final String[] rowQueries = new String[4];
+    private static final long[] rowsAt = new long[4];
+    private static boolean positionDirty;
 
     /** The list for a mode: live, or frozen as last drawn while {@link FlipPause paused} (a new search re-filters once). */
     private static List<Row> rows(int mode) {
         Shown shown = FlipPause.hold("list" + mode, queries[mode], () -> {
-            List<Row> live = liveRows(mode);
-            return new Shown(live, mode == 3 ? forgeRowsShown : null);
+            long now = System.nanoTime();
+            if (rowCache[mode] == null || !java.util.Objects.equals(rowQueries[mode], queries[mode])
+                    || now - rowsAt[mode] >= 250_000_000L) {
+                List<Row> live = liveRows(mode);
+                rowCache[mode] = new Shown(live, mode == 3 ? forgeRowsShown : null);
+                rowQueries[mode] = queries[mode];
+                rowsAt[mode] = now;
+            }
+            return rowCache[mode];
         });
         if (shown.forge() != null) forgeRowsShown = shown.forge();
         return shown.rows();
@@ -166,8 +177,28 @@ public class FlipHud {
     private static List<Row> liveRows(int mode) {
         List<Row> out = new ArrayList<>();
         java.util.Set<Flippers.Flipper> on = Flippers.feeding(mode); // flippers turned off in /bazaarflip compute nothing
+        if (mode == 0 && BaseProfit.isActiveRanking()) on.remove(Flippers.Flipper.FUSIONS);
         if (on.isEmpty()) {
             if (mode == 3) forgeRowsShown = List.of();
+            return out;
+        }
+        if (mode != 3 && BaseProfit.isActiveRanking()) {
+            double purse = MaxBuyOrder.readPurse(Minecraft.getInstance());
+            List<ActiveRanking.Pick> picks = ActiveTrading.get(mode, purse);
+            String q = queries[mode];
+            for (ActiveRanking.Pick p : picks) {
+                Opportunity o = p.opportunity();
+                if (!FlipSearch.matches(q, o.name() + " " + o.how())) continue;
+                String risk = o.confidence() < 0.95 ? " §c[price/liquidity risk]" : "";
+                if ((o.kind() == Opportunity.Kind.FLIP || o.kind() == Opportunity.Kind.DIP)
+                        && !Double.isFinite(BaseProfit.typicalBuy(o.id()))) risk = " §c[history unverified]";
+                double perHour = p.estimatedProfit() / p.hours();
+                out.add(new Row(o.name() + " §d[" + o.kind().label + " +" + coins(p.estimatedProfit()) + "]" + badges(o.id()),
+                        perHour,
+                        "§7" + p.quantity() + "x | Cost §r" + coins(p.cost()) + " §7| fill ~" + String.format("%.0f", p.hours() * 60) + " min",
+                        risk.isEmpty() ? "§7" + o.how() : risk + " §7" + o.how(), o.name()));
+                if (out.size() >= cap()) break;
+            }
             return out;
         }
         if (mode == 3) {
@@ -266,7 +297,16 @@ public class FlipHud {
         int visible = Math.max(1, Math.min(BaseProfit.getVisibleRows(), Math.max(1, items.size())));
         int maxScroll = Math.max(0, items.size() - visible);
         scroll = Math.max(0, Math.min(scroll, maxScroll));
-        int footer = items.size() > visible ? 12 : 4;
+        String warning = "";
+        if (!FlipPause.paused()) {
+            if (mode != 3 && BaseProfit.isActiveRanking()) {
+                warning = BazaarSnapshot.warning();
+                if (warning.isEmpty()) warning = ActiveTrading.warning(mode);
+            }
+            if (!BaseProfit.isActiveRanking() && mode <= 1 && Flippers.on(mode == 1 ? Flippers.Flipper.DIPS : Flippers.Flipper.FLIPS)) warning = BazaarFlipRows.warning();
+            if (warning.isEmpty() && (mode >= 2 || (mode == 0 && Flippers.on(Flippers.Flipper.BOOKS)))) warning = BazaarSnapshot.warning();
+        }
+        int footer = (items.size() > visible ? 12 : 4) + (warning.isEmpty() ? 0 : 12);
         int height = TITLE_H + (items.isEmpty() ? 26 : visible * ROW_H) + footer;
 
         // drag by the title bar
@@ -283,12 +323,18 @@ public class FlipHud {
             } else {
                 guiX = mouseX - dragOffX;
                 guiY = mouseY - dragOffY;
-                cfgSetInt("guiX", guiX);
-                cfgSetInt("guiY", guiY);
-                cfgSave();
+                if (guiX != cfgInt("guiX") || guiY != cfgInt("guiY")) {
+                    cfgSetInt("guiX", guiX);
+                    cfgSetInt("guiY", guiY);
+                    positionDirty = true;
+                }
             }
         } else {
             dragging = false;
+            if (positionDirty) {
+                positionDirty = false;
+                cfgSave();
+            }
         }
 
         int x = Math.round(guiX / s), y = Math.round(guiY / s);
@@ -319,7 +365,8 @@ public class FlipHud {
         g.fill(x + WIDTH - 1, y, x + WIDTH, y + height, border);
         g.fill(x, y + TITLE_H, x + WIDTH, y + TITLE_H + 1, 0x30FFFFFF);
 
-        String heading = switch (mode) {
+        String heading = mode != 3 && BaseProfit.isActiveRanking()
+                ? "§l§eActive " + (mode == 0 ? "flips" : MODE_NOUN[mode]) + " (your est./hr)" : switch (mode) {
             case 1 -> "§l§bBazaar Dips (Profit/hr)";
             case 2 -> "§l§dShard Fusions (Profit/hr)";
             case 3 -> ForgeCalc.filterTag().isEmpty() ? "§l§6Forge Flips (Profit/hr)" : "§l§6Forge Flips§r" + ForgeCalc.filterTag();
@@ -346,7 +393,7 @@ public class FlipHud {
                 int ry = FlipHudLayout.rowTextY(y, i);
                 if (i > 0) g.fill(x + 4, ry - 2, x + WIDTH - 4, ry - 1, 0x20FFFFFF);
 
-                String perHour = coins(row.perHour()) + "/hr";
+                String perHour = coins(row.perHour()) + "/hr" + (mode != 3 && BaseProfit.isActiveRanking() ? " est." : "");
                 int perHourW = font.width("§l" + perHour);
                 String title = "§l#" + (idx + 1) + " " + row.title();
                 if (font.width(title) > WIDTH - 18 - perHourW) {
@@ -359,9 +406,10 @@ public class FlipHud {
                 g.text(font, fit(font, row.line3(), WIDTH - 12), x + 6, ry + 22, textColor, true);
             }
             if (items.size() > visible) {
-                g.text(font, "§8scroll for more", x + 6, y + height - 11, textColor, true);
+                g.text(font, "§8scroll for more", x + 6, y + height - 11 - (warning.isEmpty() ? 0 : 12), textColor, true);
             }
         }
+        if (!warning.isEmpty()) g.text(font, fit(font, "§c" + warning, WIDTH - 12), x + 6, y + height - 11, textColor, true);
         g.pose().popMatrix();
     }
 
@@ -403,7 +451,8 @@ public class FlipHud {
         Potential pot = FlipPause.hold("potential", null,
                 () -> new Potential(ShardPotential.get(), ShardPotential.source(), ShardPotential.pricesLoading()));
         FusionPotential.Plan plan = pot.plan();
-        List<String> head = new ArrayList<>(), rows = new ArrayList<>();
+        List<String> head = new ArrayList<>();
+        List<FusionPotential.Fusion> rows = plan.fusions();
         head.add((FlipPause.paused() ? "§c§lPAUSED §r" : "") + "§l§dFuse your Hunting Box §r§8(SkyHanni counts)");
         switch (pot.source()) {
             case NO_SKYHANNI -> head.add("§7Needs SkyHanni to read your Hunting Box.");
@@ -413,18 +462,20 @@ public class FlipHud {
                 else if (plan.fusions().isEmpty()) head.add("§7Nothing profitable to fuse from what you have.");
             }
         }
-        for (FusionPotential.Fusion f : plan.fusions()) {
-            FusionPotential.Recipe r = f.recipe();
-            rows.add("§a+" + coins(f.profit()) + " §7" + f.times() + "x §f" + shardLabel(ItemNames.of(r.output())) + " §8("
-                    + r.leftCount() * f.times() + " " + shardLabel(ItemNames.of(r.left())) + " + "
-                    + r.rightCount() * f.times() + " " + shardLabel(ItemNames.of(r.right())) + ")");
-        }
+        String warning = FlipPause.paused() ? "" : ShardPotential.warning();
+        if (!warning.isEmpty()) head.add("§c" + warning);
         int x = Math.round(boundsLeft / s), y = Math.round((boundsBottom + 4) / s);
         int screenRows = (int) ((mc.getWindow().getGuiScaledHeight() / s - y - 8 - (head.size() + 2) * 11) / 11);
         int visible = Math.max(0, Math.min(POTENTIAL_ROWS, Math.min(rows.size(), screenRows)));
         potentialScroll = Math.max(0, Math.min(potentialScroll, rows.size() - visible));
         List<String> lines = new ArrayList<>(head);
-        for (int i = 0; i < visible; i++) lines.add(rows.get(potentialScroll + i));
+        for (int i = 0; i < visible; i++) {
+            FusionPotential.Fusion f = rows.get(potentialScroll + i);
+            FusionPotential.Recipe r = f.recipe();
+            lines.add("§a+" + coins(f.profit()) + " §7" + f.times() + "x §f" + shardLabel(ItemNames.of(r.output())) + " §8("
+                    + r.leftCount() * f.times() + " " + shardLabel(ItemNames.of(r.left())) + " + "
+                    + r.rightCount() * f.times() + " " + shardLabel(ItemNames.of(r.right())) + ")");
+        }
         if (!rows.isEmpty()) {
             lines.add("§7Total §6+" + coins(plan.total()) + " §8- uses " + plan.shardsUsed() + " of your " + plan.shardsHeld() + " shards");
             if (rows.size() > visible) lines.add("§8" + (potentialScroll + 1) + "-" + (potentialScroll + visible) + " of " + rows.size() + ", scroll for more");

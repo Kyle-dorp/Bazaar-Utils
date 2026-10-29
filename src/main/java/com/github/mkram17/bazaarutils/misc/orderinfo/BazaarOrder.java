@@ -80,6 +80,7 @@ public class BazaarOrder extends OrderInfoContainer {
     }
 
     private void handleOutbidStatusChange(){
+        if (Minecraft.getInstance().player == null) return;
         Optional<Statuses> outbidOptional = findOutbidStatus();
         if(outbidOptional.isEmpty()) return;
 

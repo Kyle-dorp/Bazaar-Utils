@@ -52,9 +52,12 @@ final class FlipSearch {
      */
     static List<FusionHit> fusions(String query, List<FusionCalc.Fusion> all, Function<String, String> name) {
         List<FusionHit> makes = new ArrayList<>(), uses = new ArrayList<>();
+        String normalized = ProfitLedger.norm(query);
+        java.util.Map<String, Boolean> matched = new java.util.HashMap<>();
+        Predicate<String> matches = id -> matched.computeIfAbsent(id, key -> ProfitLedger.norm(name.apply(key)).contains(normalized));
         for (FusionCalc.Fusion f : all) {
-            if (matches(query, name.apply(f.output()))) makes.add(new FusionHit(f, Relation.MAKES));
-            else if (matches(query, name.apply(f.left())) || matches(query, name.apply(f.right()))) uses.add(new FusionHit(f, Relation.USES));
+            if (matches.test(f.output())) makes.add(new FusionHit(f, Relation.MAKES));
+            else if (matches.test(f.left()) || matches.test(f.right())) uses.add(new FusionHit(f, Relation.USES));
         }
         makes.sort((a, b) -> Double.compare(b.fusion().perHour(), a.fusion().perHour()));
         uses.sort((a, b) -> Double.compare(b.fusion().perHour(), a.fusion().perHour()));

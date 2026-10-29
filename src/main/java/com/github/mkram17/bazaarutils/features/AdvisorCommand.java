@@ -69,6 +69,12 @@ public final class AdvisorCommand {
     }
 
     private static void print(OpportunityAdvisor.Plan plan, OpportunityFeed.Options options) {
+        String warning = BazaarSnapshot.warning();
+        if (!warning.isEmpty()) PlayerActionUtil.notifyAll(warning + ". Recommendations may be incomplete or outdated.");
+        if (Flippers.bazaarChecksOn()) {
+            String flipsWarning = BazaarFlipRows.warning();
+            if (!flipsWarning.isEmpty()) PlayerActionUtil.notifyAll(flipsWarning);
+        }
         for (String line : plan.summary()) PlayerActionUtil.notifyAll(line);
         for (OpportunityAdvisor.Pick p : plan.forges()) {
             PlayerActionUtil.notifyAll(" " + p.slots() + "x " + p.opportunity().name() + ": " + OpportunityAdvisor.coins(p.profitPerHour())

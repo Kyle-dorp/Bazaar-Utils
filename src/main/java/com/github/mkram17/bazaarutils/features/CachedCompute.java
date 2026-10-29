@@ -19,6 +19,11 @@ final class CachedCompute<K, V> {
     private volatile K lastKey;
     private volatile long startedAt = Long.MIN_VALUE / 2;
     private volatile boolean running;
+    private volatile RuntimeException failure;
+
+    RuntimeException failure() {
+        return failure;
+    }
 
     CachedCompute(Function<K, V> compute, Executor executor, LongSupplier clock, long maxAgeMs, V initial) {
         this.compute = compute;
@@ -35,15 +40,22 @@ final class CachedCompute<K, V> {
             running = true;
             lastKey = key;
             startedAt = now;
-            executor.execute(() -> {
-                try {
-                    value = compute.apply(key);
-                } catch (RuntimeException ignored) {
-                    // keep the previous value
-                } finally {
-                    running = false;
-                }
-            });
+            try {
+                executor.execute(() -> {
+                    try {
+                        value = compute.apply(key);
+                        failure = null;
+                    } catch (RuntimeException e) {
+                        // keep the previous value
+                        failure = e;
+                    } finally {
+                        running = false;
+                    }
+                });
+            } catch (RuntimeException e) {
+                failure = e;
+                running = false;
+            }
         }
         return value;
     }

@@ -89,8 +89,8 @@ public class BookCraft {
 
         loadOverrides();
         double tax = BaseProfit.getTaxPercent() / 100.0;
-        double minProfit = BaseProfit.getCoins();
-        double minRate = BaseProfit.getMinItemsPerHour();
+        double minProfit = BaseProfit.isActiveRanking() ? 0 : BaseProfit.getCoins();
+        double minRate = BaseProfit.isActiveRanking() ? 0 : BaseProfit.getMinItemsPerHour();
         List<Craft> out = new ArrayList<>();
         for (TreeMap<Integer, Tier> fam : families.values()) {
             for (Tier target : fam.values()) {

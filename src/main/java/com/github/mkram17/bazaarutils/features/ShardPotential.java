@@ -65,6 +65,10 @@ final class ShardPotential {
         return source;
     }
 
+    static String warning() {
+        return plan.failure() == null ? BazaarSnapshot.warning() : "Fusion plan refresh failed; showing previous result";
+    }
+
     /** True until the Bazaar prices have been fetched once (the fusion list fetches them when the Fusion Box opens). */
     static boolean pricesLoading() {
         return BazaarSnapshot.cachedProducts() == null;

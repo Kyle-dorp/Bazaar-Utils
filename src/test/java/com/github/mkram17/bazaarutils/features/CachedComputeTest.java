@@ -54,6 +54,32 @@ class CachedComputeTest {
         assertEquals(2, computed, "30 seconds old: refresh for new prices");
     }
 
+    @Test
+    void failuresAreVisibleAndClearAfterRecovery() {
+        var c = new CachedCompute<String, String>(key -> {
+            if (key.equals("bad")) throw new IllegalStateException("unavailable");
+            return key;
+        }, Runnable::run, () -> now, 30_000, "initial");
+        assertEquals("good", c.get("good"));
+        assertEquals("good", c.get("bad"));
+        assertInstanceOf(IllegalStateException.class, c.failure());
+        assertEquals("recovered", c.get("recovered"));
+        assertNull(c.failure());
+    }
+
+    @Test
+    void rejectedSubmissionDoesNotBreakRenderingOrPermanentlyStopRefreshes() {
+        var c = new CachedCompute<String, String>(key -> key, task -> {
+            if (now == 0) throw new java.util.concurrent.RejectedExecutionException();
+            task.run();
+        }, () -> now, 30_000, "initial");
+        assertEquals("initial", assertDoesNotThrow(() -> c.get("first")));
+        assertInstanceOf(java.util.concurrent.RejectedExecutionException.class, c.failure());
+        now = 30_000;
+        assertEquals("first", c.get("first"));
+        assertNull(c.failure());
+    }
+
     /** While a computation runs the caller gets the previous value at once, and no second computation is started. */
     @Test
     void theCallerNeverWaitsAndWorkIsNotQueuedTwice() {

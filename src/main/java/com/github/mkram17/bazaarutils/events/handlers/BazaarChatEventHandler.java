@@ -38,7 +38,7 @@ public class BazaarChatEventHandler {
         OrderInfoContainer order = event.order();
         //insta sell shows the price before tax in chat, but it actually costs more than that
         double totalPriceBeforeTax = order.getVolume()*order.getPricePerItem();
-        double totalPriceWithTax = totalPriceBeforeTax * ((100 + BUConfig.get().bzTax)/100);
+        double totalPriceWithTax = com.github.mkram17.bazaarutils.features.BaseProfit.afterTax(totalPriceBeforeTax);
 
         //order limit does not count the tax
         BUConfig.get().orderLimit.addOrderToLimit(totalPriceBeforeTax);

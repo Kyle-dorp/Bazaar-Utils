@@ -88,7 +88,8 @@ public class BUCommands {
         bazaarutils.then(ClientCommands.literal("tax")
                 .then((ClientCommands.argument("amount", DoubleArgumentType.doubleArg(1, 1.25))
                                 .executes((context) -> {
-                                    BUConfig.get().bzTax = DoubleArgumentType.getDouble(context, "amount") / 100;
+                                    com.github.mkram17.bazaarutils.features.BaseProfit.setTaxPercent(DoubleArgumentType.getDouble(context, "amount"));
+                                    PlayerActionUtil.notifyAll("Bazaar sell tax set to " + com.github.mkram17.bazaarutils.features.BaseProfit.getTaxPercent() + "%.");
                                     return 1;
                                 })
                         )
