@@ -169,17 +169,21 @@ public class FusionCalc {
         Map<Integer, int[]> bestRecipe = new HashMap<>();
         Map<Integer, double[]> bestNumbers = new HashMap<>();
         List<Fusion> every = new ArrayList<>();
+        List<Fusion> searchable = new ArrayList<>(); // every profitable recipe, min profit and min rate aside
         for (int[] r : recipes) {
             int l = r[1], lc = r[2], rt = r[3], rc = r[4], o = r[5], oc = r[6];
             if (bid[l] <= 0 || bid[rt] <= 0 || ask[o] <= 0) continue;
             if (!bidOk[l] || !bidOk[rt] || !askOk[o]) continue;
             double cost = lc * bid[l] + rc * bid[rt];
             double profit = oc * ask[o] * (1 - tax) - cost;
-            if (!FusionPotential.worthIt(profit, minProfit)) continue;
+            if (profit <= 0) continue;
             double fusionsPerHour = Math.min(Math.min(fill[l] / lc, fill[rt] / rc), sell[o] / oc);
-            if (fusionsPerHour * oc < minRate || fusionsPerHour <= 0) continue;
+            if (fusionsPerHour <= 0) continue;
             double perHour = profit * fusionsPerHour;
-            every.add(new Fusion(types[r[0]], ids[l], lc, bid[l], ids[rt], rc, bid[rt], ids[o], oc, ask[o], cost, profit, perHour));
+            Fusion fusion = new Fusion(types[r[0]], ids[l], lc, bid[l], ids[rt], rc, bid[rt], ids[o], oc, ask[o], cost, profit, perHour);
+            searchable.add(fusion);
+            if (!FusionPotential.worthIt(profit, minProfit) || fusionsPerHour * oc < minRate) continue;
+            every.add(fusion);
             double[] prev = bestNumbers.get(o);
             if (prev == null || perHour > prev[2]) {
                 bestRecipe.put(o, r);
@@ -197,6 +201,7 @@ public class FusionCalc {
         out.sort((a, b) -> Double.compare(b.perHour(), a.perHour()));
         every.sort((a, b) -> Double.compare(b.perHour(), a.perHour()));
         allFusions = every;
+        searchIndex = new FlipSearch.FusionIndex(searchable, ItemNames::of); // sorts and normalizes names here, off the render thread
         return out;
     }
 
@@ -205,5 +210,15 @@ public class FusionCalc {
     /** Every profitable recipe from the last refresh (not just the best per output), best profit per hour first. */
     public static List<Fusion> getAll() {
         return allFusions;
+    }
+
+    private static volatile FlipSearch.FusionIndex searchIndex = FlipSearch.FusionIndex.EMPTY;
+
+    /**
+     * What the fusion search runs over: every recipe that makes a profit at the last refresh, ignoring the min profit and min
+     * fusions-per-hour settings (those trim the unsearched list), still skipping prices off their 7-day average.
+     */
+    static FlipSearch.FusionIndex searchIndex() {
+        return searchIndex;
     }
 }

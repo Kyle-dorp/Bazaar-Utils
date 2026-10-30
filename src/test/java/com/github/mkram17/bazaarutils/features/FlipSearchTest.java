@@ -83,6 +83,27 @@ class FlipSearchTest {
         assertEquals(Map.of("SHARD_BRAMBLE", 1, "SHARD_FLITTER", 1, "SHARD_HIDEONCAVE", 1), calls);
     }
 
+    /** The index looks names up once when it's built, never at search time, and a repeated search reuses its result. */
+    @Test
+    void theFusionIndexNormalizesNamesOnceAndCachesTheLastSearch() {
+        Map<String, Integer> calls = new HashMap<>();
+        List<FusionCalc.Fusion> all = IntStream.range(0, 5000)
+                .mapToObj(i -> fusion("SHARD_BRAMBLE", i % 2 == 0 ? "SHARD_FLITTER" : "SHARD_HIDEONLEAF", "SHARD_HIDEONCAVE", i)).toList();
+        FlipSearch.FusionIndex index = new FlipSearch.FusionIndex(all, id -> {
+            calls.merge(id, 1, Integer::sum);
+            return SHARD_NAME.apply(id);
+        });
+        Map<String, Integer> afterBuild = Map.copyOf(calls);
+        List<FusionHit> flitter = index.search("Flitter");
+        assertEquals(2500, flitter.size(), "every match, not cut to the row limit");
+        assertEquals(4998.0, flitter.get(0).fusion().perHour(), "best profit per hour first");
+        assertSame(flitter, index.search("  flitter "), "same search after normalizing: the cached result");
+        assertEquals(5000, index.search("hideoncave").size());
+        assertEquals(afterBuild, calls, "no name lookups while searching");
+        assertTrue(index.search("umber").isEmpty());
+        assertEquals(0, FlipSearch.FusionIndex.EMPTY.search("flitter").size());
+    }
+
     // ---- forge ----
 
     private final Map<String, Recipe> recipes = new LinkedHashMap<>();

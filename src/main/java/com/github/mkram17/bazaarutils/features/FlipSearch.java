@@ -51,18 +51,66 @@ final class FlipSearch {
      * profit per hour first. {@code name} turns a shard id into its in-game name.
      */
     static List<FusionHit> fusions(String query, List<FusionCalc.Fusion> all, Function<String, String> name) {
-        List<FusionHit> makes = new ArrayList<>(), uses = new ArrayList<>();
-        String normalized = ProfitLedger.norm(query);
-        java.util.Map<String, Boolean> matched = new java.util.HashMap<>();
-        Predicate<String> matches = id -> matched.computeIfAbsent(id, key -> ProfitLedger.norm(name.apply(key)).contains(normalized));
-        for (FusionCalc.Fusion f : all) {
-            if (matches.test(f.output())) makes.add(new FusionHit(f, Relation.MAKES));
-            else if (matches.test(f.left()) || matches.test(f.right())) uses.add(new FusionHit(f, Relation.USES));
+        return new FusionIndex(all, name).search(query);
+    }
+
+    /**
+     * Every profitable fusion, ready to search: shard names are normalized once when the list is built (on the fusion worker,
+     * after each Bazaar refresh), so a search is one pass over three int arrays plus a "contains" per distinct shard, and the
+     * last result is kept so a redraw with the same query costs nothing. The list is sorted best profit per hour first once,
+     * here; both result groups keep that order, so nothing is sorted at search time.
+     */
+    static final class FusionIndex {
+        static final FusionIndex EMPTY = new FusionIndex(List.of(), id -> id);
+
+        private final List<FusionCalc.Fusion> all;
+        private final String[] names; // normalized in-game name per shard number
+        private final int[] out, left, right; // shard numbers per fusion
+        private String lastQuery;
+        private List<FusionHit> lastHits;
+
+        FusionIndex(List<FusionCalc.Fusion> all, Function<String, String> name) {
+            List<FusionCalc.Fusion> sorted = new ArrayList<>(all);
+            sorted.sort((a, b) -> Double.compare(b.perHour(), a.perHour()));
+            this.all = List.copyOf(sorted);
+            java.util.Map<String, Integer> number = new java.util.HashMap<>();
+            List<String> names = new ArrayList<>();
+            Function<String, Integer> num = id -> number.computeIfAbsent(id, k -> {
+                names.add(ProfitLedger.norm(name.apply(k)));
+                return names.size() - 1;
+            });
+            int n = this.all.size();
+            out = new int[n];
+            left = new int[n];
+            right = new int[n];
+            for (int i = 0; i < n; i++) {
+                FusionCalc.Fusion f = this.all.get(i);
+                out[i] = num.apply(f.output());
+                left[i] = num.apply(f.left());
+                right[i] = num.apply(f.right());
+            }
+            this.names = names.toArray(String[]::new);
         }
-        makes.sort((a, b) -> Double.compare(b.fusion().perHour(), a.fusion().perHour()));
-        uses.sort((a, b) -> Double.compare(b.fusion().perHour(), a.fusion().perHour()));
-        makes.addAll(uses);
-        return makes;
+
+        int size() {
+            return all.size();
+        }
+
+        synchronized List<FusionHit> search(String query) {
+            String q = ProfitLedger.norm(query);
+            if (q.equals(lastQuery)) return lastHits;
+            boolean[] hit = new boolean[names.length];
+            for (int k = 0; k < names.length; k++) hit[k] = names[k].contains(q);
+            List<FusionHit> makes = new ArrayList<>(), uses = new ArrayList<>();
+            for (int i = 0; i < out.length; i++) {
+                if (hit[out[i]]) makes.add(new FusionHit(all.get(i), Relation.MAKES));
+                else if (hit[left[i]] || hit[right[i]]) uses.add(new FusionHit(all.get(i), Relation.USES));
+            }
+            makes.addAll(uses);
+            lastQuery = q;
+            lastHits = java.util.Collections.unmodifiableList(makes);
+            return lastHits;
+        }
     }
 
     // ---- forge ----

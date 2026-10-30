@@ -229,20 +229,18 @@ public class FlipHud {
         if (mode == 2) {
             FusionCalc.refreshIfStale();
             String q = queries[2];
-            List<FlipSearch.FusionHit> hits = FlipSearch.blank(q)
-                    ? FusionCalc.get().stream().map(f -> new FlipSearch.FusionHit(f, null)).toList()
-                    : FlipSearch.fusions(q, FusionCalc.getAll(), ItemNames::of);
-            for (FlipSearch.FusionHit hit : hits.subList(0, Math.min(hits.size(), cap()))) {
-                FusionCalc.Fusion f = hit.fusion();
-                String tag = hit.relation() == null ? "§7" : hit.relation() == FlipSearch.Relation.MAKES ? "§b[makes] §7" : "§3[uses] §7";
-                out.add(new Row(f.outputCount() + "x " + ItemNames.of(f.output()) + " §d[" + f.type().toLowerCase() + "]" + badges(f.output()), f.perHour(),
-                        tag + f.leftCount() + "x " + shardName(f.left()) + " + " + f.rightCount() + "x " + shardName(f.right()),
-                        // whole-fusion totals: everything you sell (after tax) minus everything you buy
-                        "§aSell §r" + coins(f.cost() + f.profit()) + " §7- Cost §r" + coins(f.cost())
-                                + " §7= §6" + coins(f.profit()) + " §e(" + String.format("%.0f", f.profit() / f.cost() * 100) + "%)",
-                        ItemNames.of(f.output())));
+            List<FlipSearch.FusionHit> hits;
+            if (FlipSearch.blank(q)) {
+                List<FusionCalc.Fusion> best = FusionCalc.get();
+                hits = best.subList(0, Math.min(best.size(), cap())).stream().map(f -> new FlipSearch.FusionHit(f, null)).toList();
+            } else {
+                hits = FusionCalc.searchIndex().search(q); // every profitable fusion, no row limit: scroll through them
             }
-            return out;
+            if (hits != fusionHits) {
+                fusionHits = hits;
+                fusionRows = new FusionRows(hits);
+            }
+            return fusionRows;
         }
         boolean dips = mode == 1;
         for (BazaarFlipRows.Row it : on.contains(dips ? Flippers.Flipper.DIPS : Flippers.Flipper.FLIPS) ? BazaarFlipRows.get() : List.<BazaarFlipRows.Row>of()) {
@@ -271,6 +269,47 @@ public class FlipHud {
         out.sort((a, b) -> Double.compare(b.perHour(), a.perHour()));
         String q = queries[mode];
         return FlipSearch.top(out, r -> FlipSearch.matches(q, r.name()), cap());
+    }
+
+    // the last fusion hits and their rows; the same hits (same search, no refresh since) keep the rows already formatted
+    private static List<FlipSearch.FusionHit> fusionHits;
+    private static List<Row> fusionRows = List.of();
+
+    /**
+     * Fusion rows, formatted the first time each is drawn: a search can match thousands of fusions, and only the handful on
+     * screen ever need their text built.
+     */
+    private static final class FusionRows extends java.util.AbstractList<Row> {
+        private final List<FlipSearch.FusionHit> hits;
+        private final Row[] built;
+
+        FusionRows(List<FlipSearch.FusionHit> hits) {
+            this.hits = hits;
+            this.built = new Row[hits.size()];
+        }
+
+        @Override
+        public int size() {
+            return hits.size();
+        }
+
+        @Override
+        public Row get(int i) {
+            Row row = built[i];
+            if (row == null) built[i] = row = fusionRow(hits.get(i));
+            return row;
+        }
+    }
+
+    private static Row fusionRow(FlipSearch.FusionHit hit) {
+        FusionCalc.Fusion f = hit.fusion();
+        String tag = hit.relation() == null ? "§7" : hit.relation() == FlipSearch.Relation.MAKES ? "§b[makes] §7" : "§3[uses] §7";
+        return new Row(f.outputCount() + "x " + ItemNames.of(f.output()) + " §d[" + f.type().toLowerCase() + "]" + badges(f.output()), f.perHour(),
+                tag + f.leftCount() + "x " + shardName(f.left()) + " + " + f.rightCount() + "x " + shardName(f.right()),
+                // whole-fusion totals: everything you sell (after tax) minus everything you buy
+                "§aSell §r" + coins(f.cost() + f.profit()) + " §7- Cost §r" + coins(f.cost())
+                        + " §7= §6" + coins(f.profit()) + " §e(" + String.format("%.0f", f.profit() / f.cost() * 100) + "%)",
+                ItemNames.of(f.output()));
     }
 
     // ---- rendering (called from the patched HudRenderer.renderOverlay) ----
@@ -530,6 +569,9 @@ public class FlipHud {
      * A search field above the list (below it if there's no room) in every inventory-style screen while the list is on
      * screen. While it has focus it takes every key, so typing E or Y doesn't close the inventory or switch modes; Esc or a
      * click elsewhere leaves it.
+     *
+     * <p>Focus only ever changes through the screen ({@link #unfocus}): the screen ignores setFocused(box) while it still
+     * thinks the box is focused, so unfocusing the box alone left it unclickable until the inventory was reopened.
      */
     @RunOnInit
     public static void registerSearchBox() {
@@ -548,7 +590,7 @@ public class FlipHud {
                 boolean shown = System.currentTimeMillis() - lastRenderMs < 500 && boundsRight > boundsLeft;
                 box.visible = shown;
                 if (!shown) {
-                    box.setFocused(false);
+                    unfocus(s, box);
                     return;
                 }
                 if (boxMode[0] != lastMode) { // the list switched mode: show that mode's search
@@ -564,15 +606,19 @@ public class FlipHud {
             ScreenKeyboardEvents.allowKeyPress(screen).register((s, key) -> {
                 if (!box.visible || !box.isFocused()) return true;
                 if (key.key() == GLFW.GLFW_KEY_ESCAPE) {
-                    box.setFocused(false);
-                    s.setFocused(null);
+                    unfocus(s, box);
                 } else {
                     box.keyPressed(key);
                 }
                 return false; // the field has it: not the inventory key, the mode key or anything else
             });
             ScreenMouseEvents.allowMouseClick(screen).register((s, click) -> {
-                if (box.isFocused() && !box.isMouseOver(click.x(), click.y())) box.setFocused(false);
+                if (box.visible && box.isMouseOver(click.x(), click.y())) {
+                    s.setFocused(null); // a fresh focus, even if the screen still had the box from before
+                    s.setFocused(box);
+                } else {
+                    unfocus(s, box);
+                }
                 return true;
             });
         });
@@ -592,6 +638,12 @@ public class FlipHud {
                                             + "\". /flipsearch on its own clears it.");
                                     return 1;
                                 }))));
+    }
+
+    /** Takes focus off the search box, through the screen so the two never disagree about who has it. */
+    private static void unfocus(net.minecraft.client.gui.screens.Screen screen, net.minecraft.client.gui.components.EditBox box) {
+        if (screen.getFocused() == box) screen.setFocused(null);
+        box.setFocused(false);
     }
 
     @RunOnInit
