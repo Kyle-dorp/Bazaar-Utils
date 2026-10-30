@@ -6,11 +6,14 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Compact replacement for BazaarFlip's settings screen (BazaarFlip is patched to open this one). Everything here is about
@@ -21,7 +24,7 @@ public class FlipSettingsScreen extends Screen {
     private static final String[] SCALE = {"", "0.5x", "0.75x", "1.0x", "1.25x", "1.5x"};
 
     private final Screen parent;
-    private final boolean advanced;
+    private final boolean visuals;
     private boolean activeRanking;
     private final List<Runnable> savers = new ArrayList<>();
     private int scaleIndex;
@@ -32,6 +35,8 @@ public class FlipSettingsScreen extends Screen {
     private Button scaleButton, listButton;
     // the flipper checkboxes, applied on save (index = Flippers.Flipper ordinal)
     private final boolean[] flipperOn = new boolean[Flippers.Flipper.values().length];
+    // the category buttons, for right clicks
+    private final Map<Button, Flippers.Flipper> categoryButtons = new LinkedHashMap<>();
 
     /** BazaarFlip opens its config screen with a no-arg constructor, so this is what the patch calls. */
     public FlipSettingsScreen() {
@@ -42,10 +47,10 @@ public class FlipSettingsScreen extends Screen {
         this(parent, false);
     }
 
-    private FlipSettingsScreen(Screen parent, boolean advanced) {
-        super(Component.literal(advanced ? "Advanced Flip Settings" : "Trading Dashboard"));
+    private FlipSettingsScreen(Screen parent, boolean visuals) {
+        super(Component.literal(visuals ? "Visuals" : "Trading Dashboard"));
         this.parent = parent;
-        this.advanced = advanced;
+        this.visuals = visuals;
     }
 
     // ---- BazaarFlip config access (reflection: BazaarFlip is not a compile dependency) ----
@@ -91,6 +96,7 @@ public class FlipSettingsScreen extends Screen {
     // ---- ui ----
 
     private static final int COL_W = 150, GAP = 14, ROW_H = 28;
+    private static final java.util.Set<String> HEADERS = java.util.Set.of("TRADING", "LIST", "POSITION", "CATEGORIES");
 
     private int x0() {
         return width / 2 - COL_W - GAP / 2;
@@ -134,54 +140,41 @@ public class FlipSettingsScreen extends Screen {
         savers.clear();
         labels.clear();
         labelPos.clear();
+        categoryButtons.clear();
         scaleIndex = Math.max(1, Math.min(5, getInt("guiScale")));
         listOn = getBool("enableMonitoring");
         activeRanking = BaseProfit.isActiveRanking();
+        listMode = BaseProfit.getListMode();
         for (Flippers.Flipper f : Flippers.Flipper.values()) flipperOn[f.ordinal()] = Flippers.on(f);
-        if (!advanced) {
-            initDashboard();
-            return;
-        }
+        if (visuals) initVisuals();
+        else initDashboard();
+    }
 
-        int left = x0(), right = left + COL_W + GAP;
-        int top = 62;
+    /** How the flip list looks and where it sits. */
+    private void initVisuals() {
+        int left = x0(), right = left + COL_W + GAP, top = 52;
 
-        // left column: what the list shows
-        label(left, top - 32, "WHAT IT SHOWS");
-        String[][] leftRows = {
-                {"Min profit per item (coins)"}, {"Min items per hour"}, {"Max vs 7-day average (%)"},
-                {"Max spend (coins)"}, {"Min margin (%)"}, {"Sell tax (%)"}, {"Dip mode: min dip vs 7-day (%)"}};
-        for (int i = 0; i < leftRows.length; i++) label(left, top + i * ROW_H - 10, leftRows[i][0]);
-        numberDouble(left, top + 0 * ROW_H, "Min profit", BaseProfit.getCoins(), BaseProfit::setCoins);
-        numberDouble(left, top + 1 * ROW_H, "Min items/hr", BaseProfit.getMinItemsPerHour(), BaseProfit::setMinItemsPerHour);
-        numberDouble(left, top + 2 * ROW_H, "Avg filter", BaseProfit.getAvgTolerance(), BaseProfit::setAvgTolerance);
-        numberInt(left, top + 3 * ROW_H, "Max spend", "maxSpendLimit", 0);
-        numberInt(left, top + 4 * ROW_H, "Min margin", "backgroundAlertThreshold", 0);
-        numberDouble(left, top + 5 * ROW_H, "Tax", BaseProfit.getTaxPercent(), BaseProfit::setTaxPercent);
-        numberDouble(left, top + 6 * ROW_H, "Dip", BaseProfit.getMinDipPercent(), BaseProfit::setMinDipPercent);
-
-        // right column: how it looks
-        label(right, top - 32, "HOW IT LOOKS");
+        label(left, 34, "LIST");
         listButton = Button.builder(Component.literal("Flip list: " + (listOn ? "ON" : "OFF")), b -> {
             listOn = !listOn;
             b.setMessage(Component.literal("Flip list: " + (listOn ? "ON" : "OFF")));
-        }).bounds(right, top - 10, COL_W, 18).build();
+        }).bounds(left, top - 10, COL_W, 18).build();
         addRenderableWidget(listButton);
         scaleButton = Button.builder(Component.literal("Size: " + SCALE[scaleIndex]), b -> {
             scaleIndex = scaleIndex % 5 + 1;
             b.setMessage(Component.literal("Size: " + SCALE[scaleIndex]));
-        }).bounds(right, top - 10 + 1 * ROW_H, COL_W, 18).build();
+        }).bounds(left, top - 10 + ROW_H, COL_W, 18).build();
         addRenderableWidget(scaleButton);
-        String[] rightRows = {"Rows visible at once", "Total rows (scroll)", "Position X", "Position Y"};
-        for (int i = 0; i < rightRows.length; i++) label(right, top + (i + 2) * ROW_H - 10, rightRows[i]);
-        EditBox visibleBox = box(right, top + 2 * ROW_H, "Rows visible", String.valueOf(BaseProfit.getVisibleRows()));
+        label(left, top + 2 * ROW_H - 10, "Rows visible at once");
+        EditBox visibleBox = box(left, top + 2 * ROW_H, "Rows visible", String.valueOf(BaseProfit.getVisibleRows()));
         savers.add(() -> {
             try {
                 BaseProfit.setVisibleRows((int) Double.parseDouble(visibleBox.getValue().trim()));
             } catch (NumberFormatException ignored) { }
         });
         // the flip list is one column now: all rows live in the first list, the second stays empty
-        EditBox totalBox = box(right, top + 3 * ROW_H, "Total rows", String.valueOf(
+        label(left, top + 3 * ROW_H - 10, "Total rows (scroll)");
+        EditBox totalBox = box(left, top + 3 * ROW_H, "Total rows", String.valueOf(
                 Math.max(1, getInt("bazaarGuiTopItemsByPercentageCount") + getInt("bazaarGuiTopItemsByMoneyCount"))));
         savers.add(() -> {
             try {
@@ -189,47 +182,22 @@ public class FlipSettingsScreen extends Screen {
                 setInt("bazaarGuiTopItemsByMoneyCount", 0);
             } catch (NumberFormatException ignored) { }
         });
-        label(right, top + 7 * ROW_H - 10, "Min fusion profit (0 = shared)");
-        numberDouble(right, top + 7 * ROW_H, "Min fusion profit", BaseProfit.getFusionMin(), BaseProfit::setFusionMin);
-        numberInt(right, top + 4 * ROW_H, "X", "guiX", Integer.MIN_VALUE);
-        numberInt(right, top + 5 * ROW_H, "Y", "guiY", Integer.MIN_VALUE);
 
-        listMode = BaseProfit.getListMode();
-        addRenderableWidget(Button.builder(Component.literal(modeLabel()), b -> {
-            listMode = (listMode + 1) % MODE_LABELS.length;
-            b.setMessage(Component.literal(modeLabel()));
-        }).bounds(right, top + 6 * ROW_H - 4, COL_W, 20).build());
+        label(right, 34, "POSITION");
+        label(right, top - 10, "Position X");
+        numberInt(right, top, "X", "guiX", Integer.MIN_VALUE);
+        label(right, top + ROW_H - 10, "Position Y");
+        numberInt(right, top + ROW_H, "Y", "guiY", Integer.MIN_VALUE);
 
-        // forge list options (slots, Quick Forge, check-ins, HotM and purse filters) have their own screen
-        addRenderableWidget(Button.builder(Component.literal("Forge settings..."), b -> {
-            applyAll();
-            VersionCompat.setScreen(Minecraft.getInstance(), new ForgeSettingsScreen(this));
-        }).bounds(left, top + 7 * ROW_H - 4, COL_W, 20).build());
-
-        // flippers: one compact row of checkboxes; off = not computed or fetched at all, not in the list, the cycle key or the advisor
-        int flipY = top + 8 * ROW_H + 4;
-        label(left, flipY - 11, "FLIPPERS §8(green on, crossed out off; hover for details)");
-        Flippers.Flipper[] all = Flippers.Flipper.values();
-        int bw = (2 * COL_W + GAP - (all.length - 1) * 2) / all.length;
-        for (Flippers.Flipper f : all) {
-            flipperOn[f.ordinal()] = Flippers.on(f);
-            Button cb = Button.builder(flipperLabel(f), b -> {
-                flipperOn[f.ordinal()] = !flipperOn[f.ordinal()];
-                b.setMessage(flipperLabel(f));
-            }).bounds(left + f.ordinal() * (bw + 2), flipY, bw, 16).tooltip(net.minecraft.client.gui.components.Tooltip.create(
-                    Component.literal(f.description + "\nOff: not computed or fetched, left out of the list, the cycle key and the advisor."))).build();
-            addRenderableWidget(cb);
-        }
-
-        addRenderableWidget(Button.builder(Component.literal("Save and close"), b -> onClose())
-                .bounds(width / 2 - 70, flipY + 22, 140, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Back"), b -> onClose())
+                .bounds(width / 2 - 70, top + 4 * ROW_H + 4, 140, 20).build());
     }
 
     private void initDashboard() {
         int left = x0(), right = left + COL_W + GAP, top = 50;
         int step = 24;
 
-        // left: the filters the ranking applies
+        // shared settings: the filters every category's ranking applies
         label(left, 34, "TRADING");
         String[][] leftLabels = {{"Purse reserve %"}, {"Trade window (min)"},
                 {"Min profit/item (0=off)"}, {"Min items/hour (0=off)"}, {"Max vs 7-day avg (%)"}, {"Sell tax (%)"}};
@@ -240,19 +208,13 @@ public class FlipSettingsScreen extends Screen {
         numberDouble(left, top + 3 * step, "Min items/hr", BaseProfit.getMinItemsPerHour(), BaseProfit::setMinItemsPerHour);
         numberDouble(left, top + 4 * step, "Avg filter", BaseProfit.getAvgTolerance(), BaseProfit::setAvgTolerance);
         numberDouble(left, top + 5 * step, "Tax", BaseProfit.getTaxPercent(), BaseProfit::setTaxPercent);
-        double purse = MaxBuyOrder.readPurse(Minecraft.getInstance());
-        label(left, top + 6 * step - 6, Double.isFinite(purse) && purse >= 0
-                ? "Spendable: " + FlipHud.coins(ActiveRanking.budget(purse, BaseProfit.getReservePercent()))
-                : "Purse unavailable");
 
-        // right: ranking mode, list, and the remaining filters
         label(right, 34, "LIST & FILTERS");
         addRenderableWidget(Button.builder(Component.literal("Rank: " + (activeRanking ? "ACTIVE" : "LEGACY")), b -> {
             activeRanking = !activeRanking;
             b.setMessage(Component.literal("Rank: " + (activeRanking ? "ACTIVE" : "LEGACY")));
         }).bounds(right, top - 10, COL_W, 18).tooltip(net.minecraft.client.gui.components.Tooltip.create(
                 Component.literal("ACTIVE: sized batches ranked by estimated net profit. LEGACY: BazaarFlip's own list."))).build());
-        listMode = BaseProfit.getListMode();
         addRenderableWidget(Button.builder(Component.literal(modeLabel()), b -> {
             listMode = nextListMode();
             b.setMessage(Component.literal(modeLabel()));
@@ -261,34 +223,50 @@ public class FlipSettingsScreen extends Screen {
         numberInt(right, top + 2 * step, "Min margin", "backgroundAlertThreshold", 0);
         label(right, top + 3 * step - 9, "Max spend (coins)");
         numberInt(right, top + 3 * step, "Max spend", "maxSpendLimit", 0);
-        label(right, top + 4 * step - 9, "Min dip vs 7-day (%)");
-        numberDouble(right, top + 4 * step, "Dip", BaseProfit.getMinDipPercent(), BaseProfit::setMinDipPercent);
-        label(right, top + 5 * step - 9, "Min fusion profit (0=shared)");
-        numberDouble(right, top + 5 * step, "Fusion min", BaseProfit.getFusionMin(), BaseProfit::setFusionMin);
+        double purse = MaxBuyOrder.readPurse(Minecraft.getInstance());
+        label(right, top + 4 * step - 6, Double.isFinite(purse) && purse >= 0
+                ? "Spendable: " + FlipHud.coins(ActiveRanking.budget(purse, BaseProfit.getReservePercent()))
+                : "Purse unavailable");
 
-        int y = top + 7 * step + 4;
+        // categories: left click turns one on or off, right click opens its own options
+        int y = top + 6 * step + 4;
         Flippers.Flipper[] all = Flippers.Flipper.values();
         int bw = (2 * COL_W + GAP - (all.length - 1) * 2) / all.length;
-        label(left, y - 12, "ENABLED METHODS §8(green on; hover for details)");
+        label(left, y - 12, "CATEGORIES §8(left click on/off, right click options)");
         for (int i = 0; i < all.length; i++) {
             Flippers.Flipper f = all[i];
-            addRenderableWidget(Button.builder(flipperLabel(f), b -> {
+            Button b = Button.builder(flipperLabel(f), btn -> {
                 flipperOn[f.ordinal()] = !flipperOn[f.ordinal()];
-                b.setMessage(flipperLabel(f));
-            }).bounds(left + i * (bw + 2), y, bw, 16)
-                    .tooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal(f.description))).build());
+                btn.setMessage(flipperLabel(f));
+            }).bounds(left + i * (bw + 2), y, bw, 16).tooltip(net.minecraft.client.gui.components.Tooltip.create(
+                    Component.literal(f.description + "\n§7Left click: on/off. Right click: options."))).build();
+            addRenderableWidget(b);
+            categoryButtons.put(b, f);
         }
-        int btnY = y + 22;
-        addRenderableWidget(Button.builder(Component.literal("Forge settings..."), b -> {
-            applyAll();
-            VersionCompat.setScreen(Minecraft.getInstance(), new ForgeSettingsScreen(this));
-        }).bounds(left, btnY, COL_W, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("Advanced / appearance..."), b -> {
+        int btnY = y + 24;
+        addRenderableWidget(Button.builder(Component.literal("Visuals..."), b -> {
             applyAll();
             VersionCompat.setScreen(Minecraft.getInstance(), new FlipSettingsScreen(this, true));
-        }).bounds(right, btnY, COL_W, 20).build());
+        }).bounds(left, btnY, COL_W, 20).tooltip(net.minecraft.client.gui.components.Tooltip.create(
+                Component.literal("Flip list on/off, size, rows and position."))).build());
         addRenderableWidget(Button.builder(Component.literal("Save and close"), b -> onClose())
-                .bounds(width / 2 - 70, btnY + 24, 140, 20).build());
+                .bounds(right, btnY, COL_W, 20).build());
+    }
+
+    /** A right click on a category opens that category's own options, saving this screen first. */
+    @Override
+    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        if (event.button() == 1) {
+            for (Map.Entry<Button, Flippers.Flipper> e : categoryButtons.entrySet()) {
+                if (!e.getKey().isMouseOver(event.x(), event.y())) continue;
+                applyAll();
+                Screen next = e.getValue() == Flippers.Flipper.FORGE ? new ForgeSettingsScreen(this)
+                        : new CategorySettingsScreen(this, e.getValue());
+                VersionCompat.setScreen(Minecraft.getInstance(), next);
+                return true;
+            }
+        }
+        return super.mouseClicked(event, doubleClick);
     }
 
     private boolean modeAvailable(int mode) {
@@ -341,12 +319,11 @@ public class FlipSettingsScreen extends Screen {
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float delta) {
         int left = x0() - 10, right = x0() + 2 * COL_W + GAP + 10;
         g.fill(left, 8, right, height - 8, 0xC0101018);
-        String title = advanced ? "Advanced Flip Settings" : "Trading Dashboard";
+        String title = visuals ? "Visuals" : "Trading Dashboard";
         g.text(font, title, width / 2 - font.width(title) / 2, 14, 0xFFFFAA00, true);
         super.extractRenderState(g, mouseX, mouseY, delta);
         for (int i = 0; i < labels.size(); i++) {
-            boolean header = labels.get(i)[0].equals("WHAT IT SHOWS") || labels.get(i)[0].equals("HOW IT LOOKS")
-                    || labels.get(i)[0].startsWith("FLIPPERS");
+            boolean header = HEADERS.contains(labels.get(i)[0].split(" ")[0]);
             g.text(font, labels.get(i)[0], labelPos.get(i)[0], labelPos.get(i)[1],
                     header ? 0xFF55FFFF : 0xFFBBBBBB, true);
         }
