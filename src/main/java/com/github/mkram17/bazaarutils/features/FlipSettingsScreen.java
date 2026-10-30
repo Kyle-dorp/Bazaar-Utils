@@ -176,6 +176,8 @@ public class FlipSettingsScreen extends Screen {
         label(left, top + 3 * ROW_H - 10, "Total rows (scroll)");
         EditBox totalBox = box(left, top + 3 * ROW_H, "Total rows", String.valueOf(
                 Math.max(1, getInt("bazaarGuiTopItemsByPercentageCount") + getInt("bazaarGuiTopItemsByMoneyCount"))));
+        int shown = FlipHud.shownCount(), max = Math.max(1, getInt("bazaarGuiTopItemsByPercentageCount") + getInt("bazaarGuiTopItemsByMoneyCount"));
+        if (shown > 0 && shown < max) label(left, top + 3 * ROW_H + 18, "§8A cap: the list has " + shown + " now, filters hide the rest");
         savers.add(() -> {
             try {
                 setInt("bazaarGuiTopItemsByPercentageCount", Math.max(1, (int) Double.parseDouble(totalBox.getValue().trim())));

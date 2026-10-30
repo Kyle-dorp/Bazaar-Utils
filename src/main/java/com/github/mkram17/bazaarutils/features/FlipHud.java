@@ -137,6 +137,11 @@ public class FlipHud {
         queries[mode] = q;
     }
 
+    /** How many rows the list had when last drawn (at most the total-rows setting; fewer when filters leave fewer). */
+    public static int shownCount() {
+        return lastCount;
+    }
+
     private static int cap() {
         return Math.max(1, cfgInt("bazaarGuiTopItemsByPercentageCount") + cfgInt("bazaarGuiTopItemsByMoneyCount"));
     }
@@ -415,6 +420,8 @@ public class FlipHud {
         if (!q.isEmpty()) heading += " §r§7\"" + q + "\"";
         if (FlipPause.paused()) heading = "§c§lPAUSED §r" + heading;
         String range = items.isEmpty() ? "" : (scroll + 1) + "-" + (scroll + visible) + " / " + items.size();
+        // fewer rows than the total-rows setting: say so, or the setting looks like it does nothing
+        if (!items.isEmpty() && q.isEmpty() && items.size() < cap()) range += " §8(max " + cap() + ")";
         g.text(font, fit(font, heading, WIDTH - 16 - font.width(range)), x + 6, y + 7, textColor, true);
         if (!items.isEmpty()) {
             g.text(font, "§7" + range, x + WIDTH - 6 - font.width(range), y + 7, textColor, true);
